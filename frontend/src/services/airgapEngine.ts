@@ -42,6 +42,7 @@ import {
   DemoScenariosResponse,
   DemoGoldenFlowResponse
 } from './api';
+import { syncDocumentToCloud, deleteDocumentFromCloud } from './cloudSync';
 
 // ==========================================
 // 1. DEFAULT MOCK SEED DATA
@@ -1354,36 +1355,103 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
   // C. DOCUMENTS
   // ----------------------------------------------------
   if (pathname === '/documents' || pathname === '/documents/') {
-    const docsKey = `kelvrin_airgap_docs_${getActiveTenantCode()}`;
+    const tenant = getActiveTenantCode();
+    const docsKey = `kelvrin_airgap_docs_${tenant}`;
     const docs = getFromStorage<SovereignDocument[]>(docsKey, SEED_DOCUMENTS);
     if (method === 'GET') {
-      return docs as unknown as T;
+      return {
+        items: docs,
+        total: docs.length,
+        page: 1,
+        page_size: 100,
+        total_pages: 1
+      } as unknown as T;
     }
   }
 
   if (pathname === '/documents/upload') {
-    const docsKey = `kelvrin_airgap_docs_${getActiveTenantCode()}`;
+    const tenant = getActiveTenantCode();
+    const docsKey = `kelvrin_airgap_docs_${tenant}`;
     const docs = getFromStorage<SovereignDocument[]>(docsKey, SEED_DOCUMENTS);
+
+    // Extract file details from FormData
+    let fileTitle = 'Uploaded Sovereign Document';
+    let fileName = 'enclave_document.pdf';
+    let fileSize = 354200;
+    let mimeType = 'application/pdf';
+    let classification = 'INTERNAL';
+    let fileDataUrl: string | null = null;
+
+    if (options?.body instanceof FormData) {
+      const f = options.body.get('file');
+      if (f instanceof File) {
+        fileName = f.name;
+        fileSize = f.size;
+        mimeType = f.type || 'application/pdf';
+      }
+      const t = options.body.get('title');
+      if (typeof t === 'string' && t.trim()) {
+        fileTitle = t.trim();
+      } else if (fileName) {
+        fileTitle = fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+      }
+      const c = options.body.get('classification');
+      if (typeof c === 'string' && c.trim()) {
+        classification = c.trim();
+      }
+      const d = options.body.get('fileDataUrl');
+      if (typeof d === 'string' && d.startsWith('data:')) {
+        fileDataUrl = d;
+      }
+    }
+
+    // Determine uploader role and identity
+    let uploaderName = 'Super Admin';
+    let uploaderRole = 'Super Admin';
+    let uploaderEmail = '';
+    try {
+      const rawUser = localStorage.getItem('kelvrin_user');
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser);
+        if (parsed.fullName) uploaderName = parsed.fullName;
+        else if (parsed.username) uploaderName = parsed.username;
+        if (parsed.role) uploaderRole = parsed.role;
+        if (parsed.email) uploaderEmail = parsed.email;
+      }
+    } catch {}
+
     const newDoc: SovereignDocument = {
-      id: `doc_${Date.now()}`,
-      title: 'Uploaded Sovereign Document',
-      filename: 'enclave_document.pdf',
-      file_size_bytes: 354200,
-      mime_type: 'application/pdf',
-      sha256_hash: 'c8f421e6e0d37e6b8c9d1a2f3e4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b',
-      classification: 'CONFIDENTIAL',
+      id: `doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      title: fileTitle,
+      filename: fileName,
+      file_size_bytes: fileSize,
+      mime_type: mimeType,
+      sha256_hash: Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+      classification: classification.toUpperCase(),
       status: 'COMPLETED',
       ocr_applied: true,
-      total_pages: 4,
-      total_chunks: 12,
-      uploaded_by: 'Super Admin',
-      owner_name: 'Super Admin',
-      content_preview: 'Document successfully ingested and indexed into sovereign local vector store.',
+      total_pages: Math.max(1, Math.ceil(fileSize / 100000)),
+      total_chunks: Math.max(2, Math.ceil(fileSize / 30000)),
+      uploaded_by: `${uploaderName} (${uploaderRole})`,
+      owner_name: uploaderName,
+      owner_email: uploaderEmail || null,
+      content_preview: `Document "${fileTitle}" ingested and verified within enclave ${tenant}.`,
       asset_category: 'Operations',
       created_at: new Date().toISOString()
     };
+
+    if (fileDataUrl) {
+      (newDoc as any).file_data_url = fileDataUrl;
+    }
+
     docs.unshift(newDoc);
     setToStorage(docsKey, docs);
+
+    // Sync to Cloud Firestore with strict multi-tenant companyCode
+    syncDocumentToCloud(newDoc, tenant).catch((err) => {
+      console.warn('[AirgapEngine] Cloud document sync notice:', err);
+    });
+
     return newDoc as unknown as T;
   }
 
@@ -1408,7 +1476,8 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
   if (pathname.startsWith('/documents/') && !pathname.endsWith('/logs') && !pathname.endsWith('/chunks') && !pathname.endsWith('/upload')) {
     const parts = pathname.split('/');
     const docId = parts[2];
-    const docsKey = `kelvrin_airgap_docs_${getActiveTenantCode()}`;
+    const tenant = getActiveTenantCode();
+    const docsKey = `kelvrin_airgap_docs_${tenant}`;
     const docs = getFromStorage<SovereignDocument[]>(docsKey, SEED_DOCUMENTS);
 
     if (pathname.endsWith('/chat')) {
@@ -1430,6 +1499,9 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
     if (method === 'DELETE') {
       const remaining = docs.filter(d => d.id !== docId);
       setToStorage(docsKey, remaining);
+      deleteDocumentFromCloud(docId, tenant).catch((err) => {
+        console.warn('[AirgapEngine] Cloud document delete notice:', err);
+      });
       return { success: true, message: 'Document permanently purged from on-premises storage.' } as unknown as T;
     }
 

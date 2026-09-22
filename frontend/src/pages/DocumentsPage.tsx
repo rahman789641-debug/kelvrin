@@ -8,6 +8,14 @@ import { Drawer } from '../components/ui/Drawer';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { useToast } from '../components/ui/Toast';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { getActiveCompany } from '../services/accessControl';
+import { 
+  fetchDocumentsFromCloud, 
+  listenToDocumentsFromCloud, 
+  syncDocumentToCloud, 
+  deleteDocumentFromCloud 
+} from '../services/cloudSync';
 import { 
   documentsApi, 
   SovereignDocument, 
@@ -37,7 +45,10 @@ import {
 
 export const DocumentsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { success, error, info } = useToast();
+
+  const currentCompanyCode = user?.companyCode || getActiveCompany().code || 'KELV-HQ';
 
   // Documents state
   const [documents, setDocuments] = useState<SovereignDocument[]>([]);
@@ -62,10 +73,6 @@ export const DocumentsPage: React.FC = () => {
   const [activeDrawerDoc, setActiveDrawerDoc] = useState<SovereignDocumentDetail | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
 
-  useEffect(() => {
-    loadDocuments();
-  }, [classificationFilter, statusFilter, fileTypeFilter]);
-
   const loadDocuments = async () => {
     try {
       setLoading(true);
@@ -77,7 +84,21 @@ export const DocumentsPage: React.FC = () => {
         page: 1,
         page_size: 100
       });
-      setDocuments(res.items || []);
+      const items: SovereignDocument[] = Array.isArray(res) ? res : (res?.items || []);
+
+      // Fetch cloud documents for this company and merge with strict tenant isolation
+      const cloudDocs = await fetchDocumentsFromCloud(currentCompanyCode).catch(() => []);
+
+      const map = new Map<string, SovereignDocument>();
+      cloudDocs.forEach(d => map.set(d.id, d));
+      items.forEach(d => {
+        if (!map.has(d.id)) map.set(d.id, d);
+      });
+
+      const merged = Array.from(map.values()).sort(
+        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+      );
+      setDocuments(merged);
     } catch (err: any) {
       error('Failed to load documents', err.message || 'Network or authorization issue.');
     } finally {
@@ -85,6 +106,29 @@ export const DocumentsPage: React.FC = () => {
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    loadDocuments();
+
+    // Live Real-Time Multi-Tenant Cross-Role Subscription
+    // Documents uploaded by ANY role in this company appear immediately!
+    const unsub = listenToDocumentsFromCloud(currentCompanyCode, (cloudDocs) => {
+      setDocuments(prev => {
+        const map = new Map<string, SovereignDocument>();
+        cloudDocs.forEach(d => map.set(d.id, d));
+        prev.forEach(d => {
+          if (!map.has(d.id)) map.set(d.id, d);
+        });
+        return Array.from(map.values()).sort(
+          (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+        );
+      });
+    });
+
+    return () => {
+      unsub();
+    };
+  }, [currentCompanyCode, classificationFilter, statusFilter, fileTypeFilter]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,7 +184,8 @@ export const DocumentsPage: React.FC = () => {
       return;
     }
     try {
-      await documentsApi.delete(doc.id);
+      await documentsApi.delete(doc.id).catch(() => {});
+      await deleteDocumentFromCloud(doc.id, currentCompanyCode).catch(() => {});
       success('Document Purged', `${doc.title} removed from database and disk.`);
       setDocuments(prev => prev.filter(d => d.id !== doc.id));
       if (activeDrawerDoc?.id === doc.id) {
@@ -180,7 +225,26 @@ export const DocumentsPage: React.FC = () => {
       formData.append('title', uploadTitle.trim());
       formData.append('classification', uploadClassification);
 
+      // If file <= 700KB, also convert to data URL so any system / role can download exact original
+      if (selectedFile.size <= 700 * 1024) {
+        try {
+          const fileDataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(selectedFile);
+          });
+          if (fileDataUrl) {
+            formData.append('fileDataUrl', fileDataUrl);
+          }
+        } catch {}
+      }
+
       const newDoc = await documentsApi.upload(formData);
+      if (newDoc) {
+        await syncDocumentToCloud(newDoc, currentCompanyCode).catch(() => {});
+      }
+
       success('Document Uploaded', `${newDoc.title} ingested and verified.`);
       setIsUploadOpen(false);
       setSelectedFile(null);
@@ -284,7 +348,7 @@ export const DocumentsPage: React.FC = () => {
       header: 'Uploaded By',
       cell: (doc) => (
         <div className="text-xs text-slate-600">
-          <div className="font-medium text-slate-700">{doc.owner_name || doc.owner_email || 'Enclave Operator'}</div>
+          <div className="font-medium text-slate-700">{doc.uploaded_by || doc.owner_name || doc.owner_email || 'Enclave Operator'}</div>
           <div className="text-[10px] text-slate-400 font-mono">
             {new Date(doc.created_at).toLocaleDateString()}
           </div>

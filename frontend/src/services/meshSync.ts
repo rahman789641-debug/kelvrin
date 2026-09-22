@@ -17,7 +17,9 @@ export interface MeshMessage {
     | 'ACCESS_REQUEST_SUBMITTED'
     | 'ACCESS_REQUEST_DECIDED'
     | 'REQUEST_COMPANIES_SYNC'
-    | 'RESPONSE_COMPANIES_SYNC';
+    | 'RESPONSE_COMPANIES_SYNC'
+    | 'DOCUMENT_UPLOADED'
+    | 'DOCUMENT_DELETED';
   payload?: any;
   timestamp: number;
 }

@@ -8,6 +8,7 @@ import {
   CompanyProfile 
 } from '../services/accessControl';
 import { companyApi } from '../services/api';
+import { syncCompanyToCloud } from '../services/cloudSync';
 import { useToast } from '../components/ui/Toast';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -136,7 +137,8 @@ export const CompanyDetailsPage: React.FC = () => {
       setCompany(updated);
       setIsEditingWebsite(false);
 
-      // Persist to backend if available
+      // Persist to Cloud Firestore and backend
+      await syncCompanyToCloud(updated).catch(() => {});
       try {
         await companyApi.create({
           name: updated.name,
@@ -146,7 +148,7 @@ export const CompanyDetailsPage: React.FC = () => {
         });
       } catch {}
 
-      window.dispatchEvent(new CustomEvent('kelvrin_company_updated'));
+      window.dispatchEvent(new CustomEvent('kelvrin_company_updated', { detail: updated }));
       success('Website Saved', 'Company website has been permanently bound to your sovereign enclave.');
     } catch (err: any) {
       setWebsiteError(err.message || 'Failed to save website URL.');
@@ -164,6 +166,7 @@ export const CompanyDetailsPage: React.FC = () => {
         };
         saveActiveCompany(updated);
         setCompany(updated);
+        await syncCompanyToCloud(updated).catch(() => {});
 
         try {
           await companyApi.create({
@@ -204,8 +207,12 @@ export const CompanyDetailsPage: React.FC = () => {
       {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-slate-200/90 shadow-card">
         <div className="flex items-center gap-3.5">
-          <div className="h-12 w-12 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-600 text-white flex items-center justify-center font-black text-xl shadow-xs shrink-0">
-            <Building2 className="h-6 w-6 text-white" />
+          <div className="h-12 w-12 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-600 text-white flex items-center justify-center font-black text-xl shadow-xs shrink-0 overflow-hidden">
+            {company?.logoDataUrl ? (
+              <img src={company.logoDataUrl} alt={compName} className="h-full w-full object-contain bg-white p-1" />
+            ) : (
+              <Building2 className="h-6 w-6 text-white" />
+            )}
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">

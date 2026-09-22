@@ -48,6 +48,7 @@ import {
   isEmailCurrentlyLoggedIn,
   checkEmailConflict,
   removeActiveSession,
+  saveActiveCompany,
   AccessRequest
 } from '../services/accessControl';
 import { 
@@ -843,8 +844,11 @@ export const LoginPage: React.FC = () => {
         const memberComps = getStoredCompanies();
         const matchedMemberComp = memberComps.find(c => (c.code || c.companyCode)?.toUpperCase() === member.companyCode.toUpperCase());
         if (matchedMemberComp) {
-          localStorage.setItem('kelvrin_company', JSON.stringify(matchedMemberComp));
+          saveActiveCompany(matchedMemberComp);
         }
+        fetchCompanyFromCloud(member.companyCode).then(c => {
+          if (c) saveActiveCompany(c);
+        }).catch(() => {});
 
         const userObj = {
           id: member.id,
@@ -883,6 +887,10 @@ export const LoginPage: React.FC = () => {
 
       if (existingReq) {
         if (existingReq.status === 'approved') {
+          fetchCompanyFromCloud(code).then(c => {
+            if (c) saveActiveCompany(c);
+          }).catch(() => {});
+
           const approvedRole = (existingReq.role || selectedRole) as any;
           const userObj = {
             id: existingReq.id,
@@ -1081,6 +1089,10 @@ export const LoginPage: React.FC = () => {
       );
 
       if (status.isApproved || approvedMember) {
+        fetchCompanyFromCloud(code).then(c => {
+          if (c) saveActiveCompany(c);
+        }).catch(() => {});
+
         const approvedRole = (status.request?.role || approvedMember?.role || selectedRole) as any;
         const userObj = {
           id: `google_${googleAuth.uid || Date.now()}`,

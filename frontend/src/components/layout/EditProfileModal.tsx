@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { COUNTRIES, getStates, getDistricts } from '../../services/locationData';
 import { ImageCropModal } from '../auth/ImageCropModal';
+import { saveActiveCompany, getActiveCompany } from '../../services/accessControl';
+import { syncCompanyToCloud, syncAdminToCloud } from '../../services/cloudSync';
 import { 
   X, 
   Building2, 
@@ -148,19 +150,12 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
         logoDataUrl,
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem('kelvrin_company', JSON.stringify(updatedCompany));
-
-      // Update companies list
-      try {
-        const companiesRaw = localStorage.getItem('kelvrin_companies');
-        if (companiesRaw) {
-          const companies = JSON.parse(companiesRaw);
-          const updatedList = companies.map((c: any) =>
-            c.code?.toUpperCase() === companyCode.toUpperCase() ? { ...c, ...updatedCompany } : c
-          );
-          localStorage.setItem('kelvrin_companies', JSON.stringify(updatedList));
-        }
-      } catch {}
+      
+      saveActiveCompany(updatedCompany);
+      syncCompanyToCloud(updatedCompany).catch((err) => {
+        console.warn('[EditProfileModal] Cloud company sync notice:', err);
+      });
+      window.dispatchEvent(new CustomEvent('kelvrin_company_updated', { detail: updatedCompany }));
 
       // 2. Update Registered Admin
       const updatedAdmin = {
@@ -189,6 +184,10 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
           localStorage.setItem('kelvrin_registered_admins', JSON.stringify(updatedAdmins));
         }
       } catch {}
+
+      syncAdminToCloud(updatedAdmin).catch((err) => {
+        console.warn('[EditProfileModal] Cloud admin sync notice:', err);
+      });
 
       // 3. Update active Auth Context profile in memory and localStorage
       updateUserProfile({

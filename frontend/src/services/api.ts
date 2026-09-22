@@ -266,6 +266,8 @@ export interface SovereignDocument {
   content_preview?: string | null;
   visual_summary?: string | null;
   asset_category?: string | null;
+  companyCode?: string;
+  file_data_url?: string | null;
   created_at: string;
   updated_at?: string | null;
 }
@@ -385,6 +387,18 @@ export const documentsApi = {
       }
     } catch (err) {
       console.warn('[Document Download] Backend download unavailable, generating verified file locally:', err);
+    }
+
+    // Direct Binary Download: If file_data_url was preserved, download the exact original binary
+    if (docFallback?.file_data_url) {
+      try {
+        const res = await fetch(docFallback.file_data_url);
+        const blob = await res.blob();
+        downloadBlob(blob, filename);
+        return;
+      } catch (err) {
+        console.warn('[Document Download] Could not decode file_data_url, using verified generator:', err);
+      }
     }
 
     // Resilient fallback for documents (Vercel / GitHub safe)
