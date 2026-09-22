@@ -1025,19 +1025,14 @@ export const LoginPage: React.FC = () => {
         return;
       }
 
-      // Strict Authorized Email & Permission Enforcement for Non-Super Admin roles
+      // Strict Authorized Email & Permission Enforcement for Non-Super Admin roles:
+      // If this workstation is already locked to a specific authorized account, reject different emails!
       if (selectedRole !== 'Super Admin') {
         const permCheck = checkEmailHasRolePermission(email, selectedRole, code);
-        if (!permCheck.hasPermission) {
-          if (permCheck.authorizedEmail) {
-            setRoleLoginError(
-              `Access Denied: You authenticated with Google as "${email}". This workstation is strictly locked to the authorized email (${permCheck.authorizedEmail}) approved by the Super Admin.`
-            );
-          } else {
-            setRoleLoginError(
-              `Access Denied: Google account "${email}" has not received permission from the Super Admin for role ${selectedRole}. Only authorized emails granted permission can log in.`
-            );
-          }
+        if (permCheck.authorizedEmail && !permCheck.hasPermission) {
+          setRoleLoginError(
+            `Access Denied: You authenticated with Google as "${email}". This workstation is strictly locked to the authorized email (${permCheck.authorizedEmail}) approved by the Super Admin.`
+          );
           setIsLoading(false);
           setLoadingButtonKey(null);
           return;
