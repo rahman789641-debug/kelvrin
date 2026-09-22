@@ -154,20 +154,25 @@ export const UsersPage: React.FC = () => {
   } catch {}
 
   const loadRequests = useCallback(async () => {
+    let cloudList: AccessRequest[] = [];
     try {
-      await fetchAccessRequestsFromCloud(currentCompanyCode);
+      cloudList = await fetchAccessRequestsFromCloud(currentCompanyCode);
     } catch (err) {
       console.warn('[CloudSync] Failed to fetch access requests from cloud:', err);
     }
     const all = getAccessRequests();
+    const map = new Map<string, AccessRequest>();
+    all.forEach(r => map.set(r.id, r));
+    cloudList.forEach(r => map.set(r.id, r));
+    const combined = Array.from(map.values());
     // Filter for requests matching current Super Admin's company code
-    const filtered = all.filter(r => !r.companyCode || r.companyCode.toUpperCase() === currentCompanyCode.toUpperCase());
+    const filtered = combined.filter(r => !r.companyCode || r.companyCode.toUpperCase() === currentCompanyCode.toUpperCase());
     setAccessRequests(filtered);
   }, [currentCompanyCode]);
 
   useEffect(() => {
     loadRequests();
-    const interval = setInterval(loadRequests, 2500);
+    const interval = setInterval(loadRequests, 2000);
 
     const unsubscribeMesh = meshSync.subscribe((msg) => {
       if (msg.type === 'ACCESS_REQUEST_SUBMITTED' || msg.type === 'ACCESS_REQUEST_DECIDED') {
@@ -175,8 +180,12 @@ export const UsersPage: React.FC = () => {
       }
     });
 
-    const unsubscribeCloud = listenToAccessRequestsFromCloud(currentCompanyCode, () => {
-      loadRequests();
+    const unsubscribeCloud = listenToAccessRequestsFromCloud(currentCompanyCode, (cloudRequests) => {
+      if (cloudRequests && Array.isArray(cloudRequests)) {
+        setAccessRequests(cloudRequests);
+      } else {
+        loadRequests();
+      }
     });
 
     return () => {

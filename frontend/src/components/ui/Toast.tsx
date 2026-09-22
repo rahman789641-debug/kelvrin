@@ -42,6 +42,18 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [removeToast]);
 
+  React.useEffect(() => {
+    const handleGlobalToast = (e: any) => {
+      if (e.detail) {
+        addToast(e.detail);
+      }
+    };
+    window.addEventListener('kelvrin_show_toast', handleGlobalToast);
+    return () => {
+      window.removeEventListener('kelvrin_show_toast', handleGlobalToast);
+    };
+  }, [addToast]);
+
   const success = useCallback((title: string, description?: string) => {
     addToast({ type: 'success', title, description });
   }, [addToast]);

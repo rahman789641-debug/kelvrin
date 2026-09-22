@@ -358,29 +358,40 @@ export async function fetchAdminFromCloud(identifier: string): Promise<any | nul
 // ==========================================
 
 export async function syncAccessRequestToCloud(req: AccessRequest): Promise<void> {
+  const safeId = req.id || `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const cleanReq: AccessRequest = {
+    ...req,
+    id: safeId,
+    companyCode: (req.companyCode || '').trim().toUpperCase(),
+    email: (req.email || '').trim().toLowerCase(),
+    fullName: req.fullName || (req.email ? req.email.split('@')[0] : 'User'),
+    role: req.role,
+    status: req.status || 'pending_approval',
+    requestedAt: req.requestedAt || new Date().toISOString(),
+    authProvider: req.authProvider || 'google',
+  };
+
   // 1. Broadcast locally via Mesh (notifies Super Admin tab in 0ms)
   try {
-    meshSync.broadcast('ACCESS_REQUEST_SUBMITTED', req);
+    meshSync.broadcast('ACCESS_REQUEST_SUBMITTED', cleanReq);
   } catch {}
 
   // 2. Sync to Backend REST API
   try {
-    await companyApi.submitAccessRequest(req).catch(() => {});
+    await companyApi.submitAccessRequest(cleanReq).catch(() => {});
   } catch {}
 
   // 3. Sync to Firebase Cloud Firestore
   try {
-    const docRef = doc(db, 'access_requests', req.id);
+    const docRef = doc(db, 'access_requests', safeId);
     await withTimeout(
       setDoc(docRef, {
-        ...req,
-        companyCode: req.companyCode.trim().toUpperCase(),
-        email: req.email.trim().toLowerCase(),
+        ...cleanReq,
         updatedAt: new Date().toISOString(),
       }, { merge: true }),
       undefined
     );
-    console.info(`[CloudSync] Access request ${req.id} synchronized to cloud.`);
+    console.info(`[CloudSync] Access request ${safeId} synchronized to cloud.`);
   } catch (err) {
     console.warn('[CloudSync] Failed to sync access request to cloud:', err);
   }
@@ -409,7 +420,7 @@ export async function fetchAccessRequestsFromCloud(companyCode?: string): Promis
     const colRef = collection(db, 'access_requests');
     const snap = await withTimeout(getDocs(colRef), null);
     if (snap && !snap.empty) {
-      const list = snap.docs.map(d => d.data() as AccessRequest);
+      const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as AccessRequest));
       list.forEach(r => map.set(r.id, r));
     }
   } catch (err) {
@@ -500,7 +511,7 @@ export function listenToAccessRequestsFromCloud(
 
         // Merge real-time snapshot docs
         snapshot.docs.forEach((d) => {
-          const data = d.data() as AccessRequest;
+          const data = { ...d.data(), id: d.id } as AccessRequest;
           if (data && data.id) {
             map.set(data.id, data);
           }

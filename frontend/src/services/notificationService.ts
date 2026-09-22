@@ -140,13 +140,22 @@ if (typeof window !== 'undefined') {
       if (msg.type === 'ACCESS_REQUEST_SUBMITTED' && msg.payload) {
         const name = msg.payload.fullName || msg.payload.email || 'An operator';
         const company = msg.payload.companyCode || '';
+        const role = msg.payload.role || 'Member';
         addNotification({
           title: 'New Access Request',
-          message: `${name} requested authorization${company ? ` for [${company}]` : ''}.`,
+          message: `${name} requested authorization as ${role}${company ? ` for [${company}]` : ''}.`,
           type: 'access',
           createdAt: Date.now(),
           read: false,
         });
+        window.dispatchEvent(new CustomEvent('kelvrin_show_toast', {
+          detail: {
+            type: 'warning',
+            title: 'New Access Request Pending',
+            description: `${name} requested authorization as ${role}${company ? ` for [${company}]` : ''}. Open User Management to review and approve.`,
+            duration: 8000,
+          }
+        }));
       } else if (msg.type === 'ACCESS_REQUEST_DECIDED' && msg.payload) {
         const status = msg.payload.status === 'approved' ? 'Approved' : 'Rejected';
         addNotification({
@@ -178,14 +187,24 @@ if (typeof window !== 'undefined') {
         if (r.status === 'pending_approval') {
           const notifId = `cloud_req_${r.id}`;
           if (!stored.some((n) => n.id === notifId)) {
+            const name = r.fullName || r.email || 'Operator';
+            const role = r.role || 'Member';
             addNotification({
               id: notifId,
               title: 'New Access Request',
-              message: `${r.fullName || r.email} requested authorization for [${r.companyCode}].`,
+              message: `${name} requested authorization as ${role} for [${r.companyCode}].`,
               type: 'access',
               createdAt: Date.now(),
               read: false,
             });
+            window.dispatchEvent(new CustomEvent('kelvrin_show_toast', {
+              detail: {
+                type: 'warning',
+                title: 'New Access Request Pending',
+                description: `${name} requested authorization as ${role} for [${r.companyCode}]. Open User Management to review and approve.`,
+                duration: 8000,
+              }
+            }));
           }
         }
       });

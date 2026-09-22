@@ -47,7 +47,8 @@ import {
   getRoleDefaultPermissions,
   isEmailCurrentlyLoggedIn,
   checkEmailConflict,
-  removeActiveSession
+  removeActiveSession,
+  AccessRequest
 } from '../services/accessControl';
 import { 
   syncCompanyToCloud, 
@@ -375,6 +376,29 @@ export const LoginPage: React.FC = () => {
       approvalGrantedRef.current = false;
       return;
     }
+
+    // Immediately ensure this pending request is pushed to Cloud Firestore so Super Admin sees it!
+    const pushPendingToCloud = async () => {
+      try {
+        const localStatus = checkUserApprovalStatus(pendingApprovalUser.email, pendingApprovalUser.companyCode);
+        const reqToSync: AccessRequest = localStatus.request || {
+          id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          fullName: pendingApprovalUser.fullName,
+          email: pendingApprovalUser.email.toLowerCase().trim(),
+          role: pendingApprovalUser.role as any,
+          companyCode: pendingApprovalUser.companyCode.toUpperCase().trim(),
+          avatarUrl: pendingApprovalUser.avatarUrl,
+          status: 'pending_approval',
+          requestedAt: new Date().toISOString(),
+          authProvider: 'google',
+        };
+        submitAccessRequest(reqToSync);
+        await syncAccessRequestToCloud(reqToSync);
+      } catch (e) {
+        console.warn('[CloudSync] Initial pending sync error:', e);
+      }
+    };
+    pushPendingToCloud();
 
     // 1. Listen to real-time Cloud Firestore updates (< 150ms cross-laptop latency!)
     const unsubscribeCloud = listenToUserApproval(
@@ -1081,22 +1105,7 @@ export const LoginPage: React.FC = () => {
         return;
       }
 
-      // 6. If an access request is already pending, return to Face A waiting screen
-      if (status.isPending) {
-        setPendingApprovalUser({
-          fullName: status.request?.fullName || fullName,
-          email,
-          role: status.request?.role || selectedRole,
-          companyCode: code,
-          avatarUrl: status.request?.avatarUrl || avatarUrl,
-        });
-        setIsLoading(false);
-        setLoadingButtonKey(null);
-        setRotationAngle(360);
-        return;
-      }
-
-      // 7. If access request was rejected
+      // 6. If access request was rejected
       if (status.isRejected) {
         setRoleLoginError(`Your access request for ${email} was declined by the Super Admin. Please contact your organization administrator.`);
         setIsLoading(false);
@@ -1104,15 +1113,15 @@ export const LoginPage: React.FC = () => {
         return;
       }
 
-      // 8. User account is verified from Google, but not yet authorized by Super Admin:
-      // Submit access request to Super Admin's queue (local & cloud)
+      // 7. User account is verified from Google, but not yet authorized by Super Admin:
+      // Submit or re-pend access request to Super Admin's queue (local & cloud)
       const newReq = submitAccessRequest({
-        fullName,
+        fullName: status.request?.fullName || fullName,
         email,
-        role: selectedRole as any,
+        role: (status.request?.role || selectedRole) as any,
         companyCode: code,
         authProvider: 'google',
-        avatarUrl,
+        avatarUrl: status.request?.avatarUrl || avatarUrl,
       });
 
       if (newReq) {
@@ -1120,11 +1129,11 @@ export const LoginPage: React.FC = () => {
       }
 
       setPendingApprovalUser({
-        fullName,
+        fullName: newReq?.fullName || fullName,
         email,
-        role: selectedRole,
+        role: newReq?.role || selectedRole,
         companyCode: code,
-        avatarUrl,
+        avatarUrl: newReq?.avatarUrl || avatarUrl,
       });
 
       // Rotate card back to 360° to display the Authorization Pending screen on Face A
@@ -1151,6 +1160,21 @@ export const LoginPage: React.FC = () => {
     if (!pendingApprovalUser) return;
     setIsLoading(true);
     try {
+      // Re-ensure this pending request is uploaded to Cloud Firestore
+      const localStatus = checkUserApprovalStatus(pendingApprovalUser.email, pendingApprovalUser.companyCode);
+      const reqToSync: AccessRequest = localStatus.request || {
+        id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        fullName: pendingApprovalUser.fullName,
+        email: pendingApprovalUser.email.toLowerCase().trim(),
+        role: pendingApprovalUser.role as any,
+        companyCode: pendingApprovalUser.companyCode.toUpperCase().trim(),
+        avatarUrl: pendingApprovalUser.avatarUrl,
+        status: 'pending_approval',
+        requestedAt: new Date().toISOString(),
+        authProvider: 'google',
+      };
+      submitAccessRequest(reqToSync);
+      await syncAccessRequestToCloud(reqToSync).catch(() => {});
       await fetchAccessRequestsFromCloud(pendingApprovalUser.companyCode);
     } catch {}
     const status = checkUserApprovalStatus(pendingApprovalUser.email, pendingApprovalUser.companyCode);
