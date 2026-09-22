@@ -93,34 +93,14 @@ export const LoginPage: React.FC = () => {
   }, [isAuthenticated, user]);
   
   // 3D Card Rotation State:
-  // 0°   = Overview Hub (Face A) - ONLY for first-time visitors without a registered organization!
+  // 0°   = Overview Hub (Face A) - Sovereign Workbench entry screen for all new sessions
   // 180° = Face B (Role Selection)
-  // 360° = Face A (Super Admin Login)
+  // 360° = Face A (Super Admin Login or Company Code Verification)
   // 540° = Face B (Role Login for staff OR Registration Step 1)
   // 720° = Face A (Registration Step 2)
-  const [rotationAngle, setRotationAngle] = useState<number>(() => {
-    try {
-      const activeComp = localStorage.getItem('kelvrin_company');
-      const lastRole = localStorage.getItem('kelvrin_last_role') || 'Super Admin';
-      if (activeComp) {
-        // Once an organization is registered or verified, lock directly into that role's login portal!
-        if (lastRole === 'Super Admin') return 360;
-        return 540;
-      }
-    } catch {}
-    return 0; // Only first-time visitors without a registered company see the overview hub (0°)
-  });
+  const [rotationAngle, setRotationAngle] = useState<number>(0);
 
-  const [faceBMode, setFaceBMode] = useState<'role_select' | 'reg_step1' | 'forgot_password' | 'role_login'>(() => {
-    try {
-      const activeComp = localStorage.getItem('kelvrin_company');
-      const lastRole = localStorage.getItem('kelvrin_last_role');
-      if (activeComp && lastRole && lastRole !== 'Super Admin') {
-        return 'role_login';
-      }
-    } catch {}
-    return 'role_select';
-  });
+  const [faceBMode, setFaceBMode] = useState<'role_select' | 'reg_step1' | 'forgot_password' | 'role_login'>('role_select');
 
   const [showLoginGuide, setShowLoginGuide] = useState(false);
   
@@ -494,12 +474,25 @@ export const LoginPage: React.FC = () => {
 
   // 3D Rotation Navigators
   const goToRoleSelect = () => {
+    setLoginError(null);
+    setRoleLoginError(null);
+    setUnverifiedCodeNotice(null);
     setFaceBMode('role_select');
     setRotationAngle(180);
   };
-  const goToOverview = () => setRotationAngle(0);
+  const goToOverview = () => {
+    setLoginError(null);
+    setRoleLoginError(null);
+    setUnverifiedCodeNotice(null);
+    setRotationAngle(0);
+  };
   const goToLoginForm = () => {
     setLoginError(null);
+    setRoleLoginError(null);
+    setUnverifiedCodeNotice(null);
+    try {
+      localStorage.setItem('kelvrin_last_role', selectedRole);
+    } catch {}
     setRotationAngle(360);
   };
   const goToRegStep1 = () => {
@@ -1877,16 +1870,14 @@ export const LoginPage: React.FC = () => {
                       Forgot password?
                     </button>
 
-                    {/* Capitalized New Registration Link - ONLY for first-time visitors */}
-                    {!verifiedCompany && (
-                      <button
-                        type="button"
-                        onClick={goToRegStep1}
-                        className="text-xs sm:text-sm text-sky-300 hover:text-white font-semibold underline block mx-auto mt-3 cursor-pointer"
-                      >
-                        New Registration
-                      </button>
-                    )}
+                    {/* Capitalized New Registration Link */}
+                    <button
+                      type="button"
+                      onClick={goToRegStep1}
+                      className="text-xs sm:text-sm text-sky-300 hover:text-white font-semibold underline block mx-auto mt-3 cursor-pointer"
+                    >
+                      New Registration
+                    </button>
                   </div>
 
                   {/* Actions: Sign In & Back */}
@@ -1911,17 +1902,15 @@ export const LoginPage: React.FC = () => {
                       </span>
                     </ShinyButton>
 
-                    {/* Back to Role Selection - ONLY for first-time visitors */}
-                    {!verifiedCompany && (
-                      <button
-                        type="button"
-                        onClick={goToRoleSelect}
-                        className="w-full py-1 text-xs sm:text-sm text-sky-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <ArrowLeft className="h-3.5 w-3.5" />
-                        <span>Back to Role Selection</span>
-                      </button>
-                    )}
+                    {/* Back to Role Selection */}
+                    <button
+                      type="button"
+                      onClick={goToRoleSelect}
+                      className="w-full py-1 text-xs sm:text-sm text-sky-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      <span>Back to Role Selection</span>
+                    </button>
                   </div>
                 </form>
               ) : (
@@ -2683,17 +2672,30 @@ export const LoginPage: React.FC = () => {
                     )}
                   </button>
 
-                  {/* Back to Company Code - ONLY for first-time visitors without a verified organization */}
-                  {!verifiedCompany && !localStorage.getItem('kelvrin_company') && !localStorage.getItem('kelvrin_last_company_code') && (
-                    <button
-                      type="button"
-                      onClick={() => setRotationAngle(360)}
-                      className="w-full py-1 text-xs text-sky-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <ArrowLeft className="h-3.5 w-3.5" />
-                      <span>Back to Company Code</span>
-                    </button>
-                  )}
+                  {/* Switch Role / Back to Role Selection */}
+                  <button
+                    type="button"
+                    onClick={goToRoleSelect}
+                    className="w-full py-1.5 text-xs text-sky-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    <span>Switch Role / Back to Role Selection</span>
+                  </button>
+
+                  {/* Change Company Code */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVerifiedCompany(null);
+                      try {
+                        localStorage.removeItem('kelvrin_company');
+                      } catch {}
+                      setRotationAngle(360);
+                    }}
+                    className="w-full py-1 text-xs text-slate-400 hover:text-sky-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <span>Change Company Code</span>
+                  </button>
                 </div>
               </form>
             ) : (
@@ -2787,11 +2789,11 @@ export const LoginPage: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={verifiedCompany ? goToLoginForm : goToOverview}
+                    onClick={goToOverview}
                     className="w-full py-1 text-xs sm:text-sm text-sky-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <ArrowLeft className="h-3.5 w-3.5" />
-                    <span>{verifiedCompany ? 'Back to Login Portal' : 'Back to Overview'}</span>
+                    <span>Back to Overview</span>
                   </button>
                 </div>
               </div>
