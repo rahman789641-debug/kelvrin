@@ -124,8 +124,10 @@ export const DashboardPage: React.FC = () => {
     try {
       await fetchAccessRequestsFromCloud(user?.companyCode);
     } catch {}
-    setActiveSessions(getActiveSessions());
-    setAccessRequests(getAccessRequests());
+    const sess = getActiveSessions();
+    const reqs = getAccessRequests();
+    setActiveSessions(Array.isArray(sess) ? sess : []);
+    setAccessRequests(Array.isArray(reqs) ? reqs : []);
   };
 
   useEffect(() => {
@@ -202,8 +204,9 @@ export const DashboardPage: React.FC = () => {
   const userRole = user?.role || 'Super Admin';
   const normRole = normalizeRole(userRole);
 
-  const pendingRequests = accessRequests.filter(r => {
-    if (r.status !== 'pending_approval') return false;
+  const safeAccessRequests = Array.isArray(accessRequests) ? accessRequests : [];
+  const pendingRequests = safeAccessRequests.filter(r => {
+    if (!r || r.status !== 'pending_approval') return false;
     if (normRole === 'SUPER_ADMIN') {
       if (!user?.companyCode) return true;
       return !r.companyCode || r.companyCode.toUpperCase() === user.companyCode.toUpperCase();
@@ -285,7 +288,7 @@ export const DashboardPage: React.FC = () => {
     <div className="space-y-6">
 
       {/* Real-Time User Authorization Request Alert Banner for Super Admin */}
-      {normRole === 'SUPER_ADMIN' && pendingRequests.length > 0 && (
+      {normRole === 'SUPER_ADMIN' && pendingRequests.length > 0 && pendingRequests[0] && (
         <div className="relative overflow-hidden rounded-xl border-2 border-amber-400/90 bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-white p-4 shadow-md backdrop-blur-xs animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div className="flex items-start gap-3.5">
@@ -305,12 +308,12 @@ export const DashboardPage: React.FC = () => {
                   </h2>
                 </div>
                 <p className="text-xs text-amber-900/90 mt-1 leading-relaxed">
-                  <span className="font-semibold text-slate-900">{pendingRequests[0].fullName}</span>{' '}
-                  <span className="text-slate-600">({pendingRequests[0].email})</span> is requesting access as role{' '}
+                  <span className="font-semibold text-slate-900">{pendingRequests[0].fullName || 'New User'}</span>{' '}
+                  <span className="text-slate-600">({pendingRequests[0].email || 'N/A'})</span> is requesting access as role{' '}
                   <span className="font-semibold text-amber-950 px-1.5 py-0.5 bg-amber-100 rounded border border-amber-200">
-                    {pendingRequests[0].role}
+                    {pendingRequests[0].role || 'Employee'}
                   </span>{' '}
-                  for Company <span className="font-mono font-bold text-amber-950">{pendingRequests[0].companyCode}</span>.
+                  for Company <span className="font-mono font-bold text-amber-950">{pendingRequests[0].companyCode || 'DEFAULT'}</span>.
                 </p>
                 {pendingRequests.length > 1 && (
                   <p className="text-[11px] text-amber-700 font-medium mt-1">

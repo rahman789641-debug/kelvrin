@@ -295,7 +295,7 @@ export const SecurityPage: React.FC = () => {
               <CardDescription>Logins, token grants, and session validations</CardDescription>
             </div>
             <Badge variant="neutral" size="sm">
-              {dashboard?.security_events.filter(e => e.action.includes('LOGIN') || e.action.includes('USER') || e.action.includes('AUTH')).length || 0} Events
+              {(dashboard?.security_events || []).filter(e => e.action.includes('LOGIN') || e.action.includes('USER') || e.action.includes('AUTH')).length || 0} Events
             </Badge>
           </CardHeader>
           <CardContent>
@@ -336,7 +336,7 @@ export const SecurityPage: React.FC = () => {
               <CardDescription>Egress enforcement, boundary audits, and permission gates</CardDescription>
             </div>
             <Badge variant="sovereign" size="sm">
-              {dashboard?.security_events.filter(e => !e.action.includes('LOGIN')).length || 0} Events
+              {(dashboard?.security_events || []).filter(e => !e.action.includes('LOGIN')).length || 0} Events
             </Badge>
           </CardHeader>
           <CardContent>

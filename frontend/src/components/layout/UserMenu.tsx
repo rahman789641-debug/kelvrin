@@ -31,10 +31,10 @@ export const UserMenu: React.FC = () => {
   };
 
   const getFirstLetter = (name?: string, email?: string) => {
-    if (name && name.trim().length > 0) {
+    if (typeof name === 'string' && name.trim().length > 0) {
       return name.trim().charAt(0).toUpperCase();
     }
-    if (email && email.trim().length > 0) {
+    if (typeof email === 'string' && email.trim().length > 0) {
       return email.trim().charAt(0).toUpperCase();
     }
     return 'S';

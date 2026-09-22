@@ -56,7 +56,8 @@ export function getAccessRequests(): AccessRequest[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.REQUESTS);
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
     console.error('Failed to parse access requests:', err);
     return [];
@@ -219,7 +220,8 @@ export function getActiveSessions(): ActiveSession[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.SESSIONS);
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
     console.error('Failed to parse active sessions:', err);
     return [];
@@ -296,7 +298,8 @@ export function getTeamMembers(): TeamMember[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.TEAM_MEMBERS);
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
     console.error('Failed to parse team members:', err);
     return [];

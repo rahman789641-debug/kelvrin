@@ -81,8 +81,10 @@ export const NotificationMenu: React.FC = () => {
     };
   }, [isOpen]);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
-  const pendingApprovalsCount = approvals.length;
+  const safeNotifs = Array.isArray(notifications) ? notifications : [];
+  const safeApprovals = Array.isArray(approvals) ? approvals : [];
+  const unreadCount = safeNotifs.filter((n) => n && !n.read).length;
+  const pendingApprovalsCount = safeApprovals.length;
   const totalAlertsCount = unreadCount + pendingApprovalsCount;
 
   const handleDecide = (id: string, decision: 'APPROVED' | 'REJECTED') => {
@@ -211,7 +213,7 @@ export const NotificationMenu: React.FC = () => {
                   : 'text-slate-400 hover:text-slate-600'
               }`}
             >
-              All ({notifications.length})
+              All ({safeNotifs.length})
             </button>
             <button
               type="button"
@@ -379,7 +381,7 @@ export const NotificationMenu: React.FC = () => {
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Real-time Sovereign Sync
             </span>
-            {notifications.length > 0 && filter !== 'approvals' && (
+            {safeNotifs.length > 0 && filter !== 'approvals' && (
               <button
                 type="button"
                 onClick={clearAllNotifications}

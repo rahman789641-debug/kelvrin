@@ -85,9 +85,9 @@ export const GlareAnalyticsSection: React.FC<GlareAnalyticsSectionProps> = ({
       ]);
 
       if (sumData) setSummary(sumData);
-      setTimeseries(tsData);
-      setModels(modData);
-      setCategories(catData);
+      setTimeseries(Array.isArray(tsData) ? tsData : []);
+      setModels(Array.isArray(modData) ? modData : []);
+      setCategories(Array.isArray(catData) ? catData : []);
     } catch (err) {
       console.warn('[GlareAnalytics] Using local sovereign telemetry:', err);
     } finally {
@@ -100,8 +100,9 @@ export const GlareAnalyticsSection: React.FC<GlareAnalyticsSectionProps> = ({
   }, [selectedRange, tenantCode]);
 
   // High-fidelity fallback / dynamic data matching company throughput
-  const chartPoints = timeseries.length > 0 
-    ? timeseries.map(pt => ({ time: pt.date, value: pt.queries, tokens: pt.tokens }))
+  const safeTimeseries = Array.isArray(timeseries) ? timeseries : [];
+  const chartPoints = safeTimeseries.length > 0 
+    ? safeTimeseries.map(pt => ({ time: pt.date, value: pt.queries, tokens: pt.tokens }))
     : [
         { time: "00:00", value: 45, tokens: 42000, latency: 18 },
         { time: "04:00", value: 52, tokens: 68000, latency: 19 },
@@ -112,8 +113,8 @@ export const GlareAnalyticsSection: React.FC<GlareAnalyticsSectionProps> = ({
         { time: "23:59", value: 104, tokens: 165000, latency: 18 },
       ];
 
-  const barChartPoints = timeseries.length > 0
-    ? timeseries.map(pt => ({ time: pt.date, value: pt.agent_tasks || Math.floor(pt.queries / 3.5) }))
+  const barChartPoints = safeTimeseries.length > 0
+    ? safeTimeseries.map(pt => ({ time: pt.date, value: pt.agent_tasks || Math.floor(pt.queries / 3.5) }))
     : [
         { time: "Mon", value: 24, codeLab: 8, docs: 12, audit: 4 },
         { time: "Tue", value: 38, codeLab: 14, docs: 18, audit: 6 },
