@@ -58,6 +58,7 @@ import {
   rejectAccessRequest, 
   terminateSession,
   getActiveCompany,
+  getStoredAdmins,
   CompanyProfile,
   ActiveSession,
   AccessRequest 
@@ -65,7 +66,9 @@ import {
 import { 
   fetchAccessRequestsFromCloud, 
   updateAccessRequestInCloud,
-  listenToAccessRequestsFromCloud
+  listenToAccessRequestsFromCloud,
+  syncCompanyToCloud,
+  syncAdminToCloud
 } from '../services/cloudSync';
 import { meshSync } from '../services/meshSync';
 import { 
@@ -114,6 +117,19 @@ export const DashboardPage: React.FC = () => {
     const handleUpdate = () => setCompany(getActiveCompany());
     window.addEventListener('kelvrin_company_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
+    
+    // Auto-sync active company & registered admin to Cloud Firestore on load
+    try {
+      const activeComp = getActiveCompany();
+      if (activeComp && activeComp.code) {
+        syncCompanyToCloud(activeComp).catch(err => console.debug('[CloudSync] Dashboard auto-sync notice:', err));
+      }
+      const admin = getStoredAdmins()[0];
+      if (admin && admin.email) {
+        syncAdminToCloud(admin).catch(err => console.debug('[CloudSync] Admin auto-sync notice:', err));
+      }
+    } catch {}
+
     return () => {
       window.removeEventListener('kelvrin_company_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);

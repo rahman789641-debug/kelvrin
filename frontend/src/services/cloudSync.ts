@@ -26,7 +26,10 @@ const TIMEOUT_MS = 8000;
 
 function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
   return Promise.race([
-    promise,
+    promise.catch((err) => {
+      console.warn('[CloudSync] Firestore operation error:', err?.message || err);
+      return fallback;
+    }),
     new Promise<T>((resolve) => setTimeout(() => resolve(fallback), TIMEOUT_MS))
   ]);
 }
@@ -145,8 +148,12 @@ export async function fetchCompanyFromCloud(code: string): Promise<any | null> {
       meshSync.broadcast('COMPANY_REGISTERED', data);
       return data;
     }
+  } catch (err) {
+    console.warn(`[CloudSync] Document ID lookup notice for "${codeKey}":`, err);
+  }
 
-    // 5. Query Firebase Cloud Firestore by 'code' field
+  // 5. Query Firebase Cloud Firestore by 'code' field
+  try {
     const colRef = collection(db, 'companies');
     const q = query(colRef, where('code', '==', codeKey));
     const qSnap = await withTimeout(getDocs(q), null);
@@ -156,8 +163,13 @@ export async function fetchCompanyFromCloud(code: string): Promise<any | null> {
       meshSync.broadcast('COMPANY_REGISTERED', data);
       return data;
     }
+  } catch (err) {
+    console.warn(`[CloudSync] Query by code notice for "${codeKey}":`, err);
+  }
 
-    // 6. Query Firebase Cloud Firestore by 'companyCode' field fallback
+  // 6. Query Firebase Cloud Firestore by 'companyCode' field fallback
+  try {
+    const colRef = collection(db, 'companies');
     const qComp = query(colRef, where('companyCode', '==', codeKey));
     const qCompSnap = await withTimeout(getDocs(qComp), null);
     if (qCompSnap && !qCompSnap.empty) {
@@ -167,7 +179,7 @@ export async function fetchCompanyFromCloud(code: string): Promise<any | null> {
       return data;
     }
   } catch (err) {
-    console.warn(`[CloudSync] Cloud lookup failed for company code "${code}":`, err);
+    console.warn(`[CloudSync] Query by companyCode notice for "${codeKey}":`, err);
   }
 
   return null;
