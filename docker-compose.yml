@@ -1,0 +1,128 @@
+# ==============================================================================
+# KELVRIN: Sovereign Agentic AI Workbench
+# Production Multi-Service Container Orchestration (Phase 21)
+# Zero Cloud Dependencies & Air-Gap Enforced
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Primary Relational & Vector Database (PostgreSQL 16 + pgvector)
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: kelvrin_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sovereign_classified_password}
+      POSTGRES_DB: ${POSTGRES_DB:-kelvrin_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kelvrin_internal
+
+  # ----------------------------------------------------------------------------
+  # 2. Sovereign FastAPI Backend Gateway
+  # ----------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: kelvrin_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-sovereign_classified_password}@postgres:5432/${POSTGRES_DB:-kelvrin_db}
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sovereign_classified_password}
+      POSTGRES_DB: ${POSTGRES_DB:-kelvrin_db}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-sovereign-classified-kelvrin-secret-key-change-in-prod}
+      KELVRIN_AUTH_MODE: ${KELVRIN_AUTH_MODE:-airgap_local}
+      AUTH_MODE: ${AUTH_MODE:-local}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-kelvrin-sovereign-ai}
+      LOCAL_INFERENCE_URL: ${LOCAL_INFERENCE_URL:-http://local-model-service:11434/v1}
+      LOCAL_EMBEDDING_URL: ${LOCAL_EMBEDDING_URL:-http://local-model-service:11434/v1}
+      PRIMARY_LLM_MODEL: ${PRIMARY_LLM_MODEL:-deepseek-r1:14b}
+      FAST_ROUTER_MODEL: ${FAST_ROUTER_MODEL:-llama3.1:8b}
+      VISION_MODEL: ${VISION_MODEL:-qwen2-vl:7b}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-bge-m3}
+      DOCUMENT_STORAGE_DIR: /workspace/data/sovereign_vault
+      MAX_UPLOAD_SIZE_BYTES: ${MAX_UPLOAD_SIZE_BYTES:-52428800}
+    ports:
+      - "8000:8000"
+    volumes:
+      - sovereign_vault_data:/workspace/data/sovereign_vault
+      - scratch_data:/workspace/scratch
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - kelvrin_internal
+
+  # ----------------------------------------------------------------------------
+  # 3. Sovereign Enterprise Frontend (Nginx SPA Reverse Proxy)
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: kelvrin_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - kelvrin_internal
+
+  # ----------------------------------------------------------------------------
+  # 4. Optional Local AI Model Service (Ollama / vLLM Profile)
+  # Activated with: docker compose --profile local-models up
+  # ----------------------------------------------------------------------------
+  local-model-service:
+    image: ollama/ollama:latest
+    container_name: kelvrin_local_models
+    restart: unless-stopped
+    profiles:
+      - local-models
+    ports:
+      - "11434:11434"
+    volumes:
+      - local_models_data:/root/.ollama
+    networks:
+      - kelvrin_internal
+
+volumes:
+  postgres_data:
+    driver: local
+  sovereign_vault_data:
+    driver: local
+  scratch_data:
+    driver: local
+  local_models_data:
+    driver: local
+
+networks:
+  kelvrin_internal:
+    driver: bridge

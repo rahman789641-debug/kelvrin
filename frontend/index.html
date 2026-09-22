@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KELVRIN — Sovereign Agentic AI Workbench</title>
+    <meta name="description" content="Sovereign Agentic AI Workbench for Enterprise Zero-Data-Leakage and On-Premises Local Model Inference." />
+    <!-- Google Fonts: Inter, JetBrains Mono & Sora -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@300;500;600&display=swap" rel="stylesheet" />
+    <style>
+      .loader {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 26px;
+        background: #0A0F1D;
+        transition: opacity .5s ease, visibility .5s;
+        z-index: 99999;
+        font-family: "Sora", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      }
+      .loader.is-done {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      .loader .logo {
+        width: 200px;
+        height: 200px;
+        animation: cycle 6s linear infinite;
+      }
+
+      .loader .loading-text {
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: .22em;
+        text-transform: uppercase;
+        color: #EEF2FF;
+        animation: text-fade 2.2s ease-in-out infinite;
+      }
+
+      /* each V draws itself, then waits for the next one */
+      .loader .v {
+        stroke-dashoffset: 100;
+        animation: 6s linear infinite;
+      }
+      .loader .v1 { animation-name: draw1; }
+      .loader .v2 { animation-name: draw2; }
+      .loader .v3 { animation-name: draw3; }
+
+      .loader .dot {
+        opacity: 0;
+        animation: 6s linear infinite;
+      }
+      .loader .d1 { animation-name: dot1; }
+      .loader .d2 { animation-name: dot2; }
+      .loader .d3 { animation-name: dot3; }
+
+      /* 0s -> V1 | 2s -> V2 | 4s -> V3 | 6s -> restart */
+      @keyframes draw1 {
+        0% { stroke-dashoffset: 100; }
+        10%, 100% { stroke-dashoffset: 0; }
+      }
+      @keyframes draw2 {
+        0%, 33.3% { stroke-dashoffset: 100; }
+        43.3%, 100% { stroke-dashoffset: 0; }
+      }
+      @keyframes draw3 {
+        0%, 66.6% { stroke-dashoffset: 100; }
+        76.6%, 100% { stroke-dashoffset: 0; }
+      }
+
+      @keyframes dot1 {
+        0%, 8% { opacity: 0; }
+        14%, 100% { opacity: 1; }
+      }
+      @keyframes dot2 {
+        0%, 41.3% { opacity: 0; }
+        47.3%, 100% { opacity: 1; }
+      }
+      @keyframes dot3 {
+        0%, 74.6% { opacity: 0; }
+        80.6%, 100% { opacity: 1; }
+      }
+
+      @keyframes cycle {
+        0%, 90% { opacity: 1; }
+        98%, 99.9% { opacity: 0; }
+        100% { opacity: 1; }
+      }
+
+      @keyframes text-fade {
+        0%, 100% { opacity: .18; }
+        50% { opacity: 1; }
+      }
+
+      @media (max-width: 480px) {
+        .loader .logo { width: 150px; height: 150px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .loader .logo, .loader .v, .loader .dot, .loader .loading-text { animation: none; }
+        .loader .v { stroke-dashoffset: 0; }
+        .loader .dot { opacity: 1; }
+        .loader .loading-text { opacity: .7; }
+      }
+    </style>
+  </head>
+  <body class="bg-slate-50 text-slate-800 antialiased selection:bg-brand-blue/20 selection:text-brand-blue">
+    <!-- Sovereign Kelvrin Custom Loader -->
+    <div class="loader" id="loader" role="status" aria-live="polite" aria-label="Loading">
+      <svg class="logo" viewBox="4 5 24 27" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path class="v v1" d="M7 8L16 13L25 8" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="100"/>
+        <path class="v v2" d="M7 16L16 21L25 16" stroke="#8B5CF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="100"/>
+        <path class="v v3" d="M7 24L16 29L25 24" stroke="#10B981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="100"/>
+        <circle class="dot d1" cx="16" cy="13" r="2" fill="#60A5FA"/>
+        <circle class="dot d2" cx="16" cy="21" r="2" fill="#A78BFA"/>
+        <circle class="dot d3" cx="16" cy="29" r="2" fill="#34D399"/>
+      </svg>
+      <span class="loading-text">Loading</span>
+    </div>
+
+    <script>
+      // Detect if this execution is a page reload within an active software session
+      var isPageReload = false;
+      try {
+        if (sessionStorage.getItem('kelvrin_session_active') === '1') {
+          isPageReload = true;
+        }
+        sessionStorage.setItem('kelvrin_session_active', '1');
+        if (window.performance && window.performance.getEntriesByType) {
+          var navEntries = window.performance.getEntriesByType('navigation');
+          if (navEntries && navEntries.length > 0 && navEntries[0].type === 'reload') {
+            isPageReload = true;
+          }
+        }
+      } catch (e) {}
+
+      window.__IS_PAGE_RELOAD__ = isPageReload;
+
+      /* App ready helper */
+      window.Loader = {
+        done: function () {
+          var el = document.getElementById('loader');
+          if (el) el.classList.add('is-done');
+        },
+        show: function (customText) {
+          var el = document.getElementById('loader');
+          if (el) {
+            var textEl = el.querySelector('.loading-text');
+            if (textEl) textEl.textContent = customText || 'Loading';
+            el.classList.remove('is-done');
+          }
+        },
+        showFor: function (durationMs, customText, callback) {
+          var self = this;
+          self.show(customText);
+          setTimeout(function () {
+            self.done();
+            if (typeof callback === 'function') callback();
+          }, durationMs || 5000);
+        }
+      };
+
+      // On simple page reload: dismiss loader immediately with NO delay!
+      if (isPageReload) {
+        var el = document.getElementById('loader');
+        if (el) el.classList.add('is-done');
+      }
+    </script>
+
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

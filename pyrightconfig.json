@@ -1,0 +1,17 @@
+{
+  "pythonVersion": "3.11",
+  "include": [
+    "backend"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "backend/venv",
+    "backend/venv39"
+  ],
+  "extraPaths": [
+    "backend",
+    "backend/app",
+    "backend/.venv/lib/python3.11/site-packages"
+  ]
+}

@@ -1,0 +1,101 @@
+name: KELVRIN Sovereign CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-test:
+    name: Backend Verification & Pytest Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev gcc curl
+
+      - name: Install Python Dependencies
+        run: |
+          python --version
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Execute Full 22-Phase Pytest Test Suite
+        env:
+          KELVRIN_ENV: test
+          AUTH_MODE: local
+          KELVRIN_AUTH_MODE: AIR_GAP_LOCAL
+          JWT_SECRET_KEY: ci-test-secret-key-minimum-32-characters-required
+        run: |
+          PYTHONPATH=. pytest backend/tests/ -v --durations=10
+
+      - name: Verify Coverage Threshold
+        env:
+          KELVRIN_ENV: test
+          AUTH_MODE: local
+          KELVRIN_AUTH_MODE: AIR_GAP_LOCAL
+          JWT_SECRET_KEY: ci-test-secret-key-minimum-32-characters-required
+        run: |
+          PYTHONPATH=. pytest backend/tests/ --cov=backend.app --cov-report=term-missing --cov-fail-under=80 -q
+
+  frontend-build:
+    name: Frontend TypeScript Validation & Production Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Compile TypeScript & Build Production SPA
+        working-directory: ./frontend
+        run: npm run build
+
+      - name: Verify Bundle Integrity
+        run: |
+          test -f frontend/dist/index.html || exit 1
+          echo "Frontend SPA bundle verified successfully."
+
+  docker-lint:
+    name: Docker Container Definition Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose Configuration
+        run: |
+          docker compose config -q
+          docker compose -f docker-compose.dev.yml config -q
+          echo "Docker compose manifests validated."

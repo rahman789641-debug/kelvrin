@@ -1,0 +1,102 @@
+# ==============================================================================
+# KELVRIN: Sovereign Agentic AI Workbench - Development Orchestration
+# Hot-Reloading Enabled for Local Pair Programming & Rapid Iteration
+# Usage: docker compose -f docker-compose.dev.yml up --build
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: kelvrin_postgres_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sovereign_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-kelvrin_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    networks:
+      - kelvrin_dev_network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: kelvrin_backend_dev
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-sovereign_dev_password}@postgres:5432/${POSTGRES_DB:-kelvrin_db}
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sovereign_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-kelvrin_db}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-sovereign-dev-secret-key-32-chars-long!}
+      KELVRIN_AUTH_MODE: ${KELVRIN_AUTH_MODE:-airgap_local}
+      AUTH_MODE: ${AUTH_MODE:-local}
+      LOCAL_INFERENCE_URL: ${LOCAL_INFERENCE_URL:-http://host.docker.internal:11434/v1}
+      LOCAL_EMBEDDING_URL: ${LOCAL_EMBEDDING_URL:-http://host.docker.internal:11434/v1}
+      DOCUMENT_STORAGE_DIR: /workspace/data/sovereign_vault
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/workspace/backend
+      - ./alembic.ini:/workspace/alembic.ini
+      - ./scratch:/workspace/scratch
+      - ./data:/workspace/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    networks:
+      - kelvrin_dev_network
+
+  frontend:
+    image: node:20-alpine
+    container_name: kelvrin_frontend_dev
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+      - VITE_AUTH_MODE=airgap_local
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    depends_on:
+      - backend
+    networks:
+      - kelvrin_dev_network
+
+  # Optional local model service
+  local-model-service:
+    image: ollama/ollama:latest
+    container_name: kelvrin_local_models_dev
+    profiles:
+      - local-models
+    ports:
+      - "11434:11434"
+    volumes:
+      - local_models_dev_data:/root/.ollama
+    networks:
+      - kelvrin_dev_network
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  local_models_dev_data:
+    driver: local
+
+networks:
+  kelvrin_dev_network:
+    driver: bridge

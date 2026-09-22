@@ -1,0 +1,19 @@
+{
+  "name": "kelvrin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "KELVRIN - Sovereign Agentic AI Workbench",
+  "scripts": {
+    "dev": "npm --silent --prefix frontend run dev",
+    "dev:backend": "./backend/.venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload",
+    "build": "cd frontend && npm install && npm run build",
+    "preview": "npm --prefix frontend run preview",
+    "lint": "cd frontend && npx tsc -b",
+    "test:backend": "PYTHONPATH=. ./backend/.venv/bin/python -m pytest backend/tests/ -v",
+    "test": "npm run test:backend",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f backend",
+    "clean": "rm -rf frontend/dist .pytest_cache"
+  }
+}
