@@ -100,9 +100,33 @@ export const LoginPage: React.FC = () => {
   // 360° = Face A (Super Admin Login or Company Code Verification)
   // 540° = Face B (Role Login for staff OR Registration Step 1)
   // 720° = Face A (Registration Step 2)
-  const [rotationAngle, setRotationAngle] = useState<number>(0);
+  const getInitialLoginState = () => {
+    try {
+      const hasHistory = localStorage.getItem('kelvrin_has_registered_or_logged_in') === 'true' ||
+                         localStorage.getItem('kelvrin_logged_out') === 'true' ||
+                         Boolean(localStorage.getItem('kelvrin_registered_admin')) ||
+                         Boolean(localStorage.getItem('kelvrin_registered_admins')) ||
+                         Boolean(localStorage.getItem('kelvrin_company'));
 
-  const [faceBMode, setFaceBMode] = useState<'role_select' | 'reg_step1' | 'forgot_password' | 'role_login'>('role_select');
+      const lastRole = localStorage.getItem('kelvrin_last_role');
+
+      // If user has a registered/logged-in role, DO NOT show first (0°) and second (180°) pages on logout!
+      if (hasHistory && lastRole) {
+        if (lastRole === 'Super Admin') {
+          return { angle: 360, mode: 'role_select' as const };
+        } else {
+          return { angle: 540, mode: 'role_login' as const };
+        }
+      }
+    } catch {}
+
+    // Brand new user: starts on Overview Hub (0°)
+    return { angle: 0, mode: 'role_select' as const };
+  };
+
+  const initialLoginState = getInitialLoginState();
+  const [rotationAngle, setRotationAngle] = useState<number>(initialLoginState.angle);
+  const [faceBMode, setFaceBMode] = useState<'role_select' | 'reg_step1' | 'forgot_password' | 'role_login'>(initialLoginState.mode);
 
   const [showLoginGuide, setShowLoginGuide] = useState(false);
   
@@ -150,7 +174,20 @@ export const LoginPage: React.FC = () => {
   const [roleLoginError, setRoleLoginError] = useState<string | null>(null);
 
   // Super Admin Login Form States
-  const [loginUsername, setLoginUsername] = useState('');
+  const [loginUsername, setLoginUsername] = useState<string>(() => {
+    try {
+      const savedUser = localStorage.getItem('kelvrin_last_username');
+      if (savedUser) return savedUser;
+      const registeredAdmin = localStorage.getItem('kelvrin_registered_admin');
+      if (registeredAdmin) {
+        const parsed = JSON.parse(registeredAdmin);
+        return parsed.username || parsed.email || '';
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  });
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -159,8 +196,15 @@ export const LoginPage: React.FC = () => {
   // Other Roles: Company Code Form States
   const [verifiedCompany, setVerifiedCompany] = useState<any | null>(() => {
     try {
+      const lastCode = localStorage.getItem('kelvrin_last_company_code');
+      const comps = getStoredCompanies();
+      if (lastCode) {
+        const found = comps.find(c => (c.code || '').toUpperCase() === lastCode.toUpperCase());
+        if (found) return found;
+      }
       const raw = localStorage.getItem('kelvrin_company');
-      return raw ? JSON.parse(raw) : null;
+      if (raw) return JSON.parse(raw);
+      return null;
     } catch {
       return null;
     }
@@ -168,12 +212,14 @@ export const LoginPage: React.FC = () => {
 
   const [companyCodeInput, setCompanyCodeInput] = useState<string>(() => {
     try {
+      const lastCode = localStorage.getItem('kelvrin_last_company_code');
+      if (lastCode) return lastCode.toUpperCase();
       const raw = localStorage.getItem('kelvrin_company');
       if (raw) {
         const parsed = JSON.parse(raw);
         return (parsed.code || parsed.companyCode || '').toUpperCase();
       }
-      return (localStorage.getItem('kelvrin_last_company_code') || '').toUpperCase();
+      return '';
     } catch {
       return '';
     }
@@ -272,6 +318,26 @@ export const LoginPage: React.FC = () => {
       window.removeEventListener('storage', handleCompanyUpdate);
     };
   }, []);
+
+  // When user logs out from inside a role dashboard, position directly at their role's login form (skip first and second pages)
+  useEffect(() => {
+    try {
+      const isLoggedOut = localStorage.getItem('kelvrin_logged_out') === 'true';
+      const hasHistory = localStorage.getItem('kelvrin_has_registered_or_logged_in') === 'true';
+      const lastRole = localStorage.getItem('kelvrin_last_role');
+
+      if ((isLoggedOut || hasHistory) && lastRole) {
+        if (lastRole === 'Super Admin') {
+          setSelectedRole('Super Admin');
+          setRotationAngle(360);
+        } else {
+          setSelectedRole(lastRole);
+          setFaceBMode('role_login');
+          setRotationAngle(540);
+        }
+      }
+    } catch {}
+  }, [location.pathname, location.key]);
 
   // Sync authorized email when selectedRole changes for non-Super Admin roles
   useEffect(() => {
@@ -502,6 +568,9 @@ export const LoginPage: React.FC = () => {
     setLoginError(null);
     setRoleLoginError(null);
     setUnverifiedCodeNotice(null);
+    try {
+      localStorage.removeItem('kelvrin_logged_out');
+    } catch {}
     setFaceBMode('role_select');
     setRotationAngle(180);
   };
@@ -509,6 +578,10 @@ export const LoginPage: React.FC = () => {
     setLoginError(null);
     setRoleLoginError(null);
     setUnverifiedCodeNotice(null);
+    try {
+      localStorage.removeItem('kelvrin_logged_out');
+      localStorage.removeItem('kelvrin_has_registered_or_logged_in');
+    } catch {}
     setRotationAngle(0);
   };
   const goToLoginForm = () => {
@@ -655,6 +728,8 @@ export const LoginPage: React.FC = () => {
         };
         removeActiveSession(foundAdmin.email);
         localStorage.setItem('kelvrin_last_role', 'Super Admin');
+        localStorage.setItem('kelvrin_has_registered_or_logged_in', 'true');
+        localStorage.setItem('kelvrin_last_username', foundAdmin.username || foundAdmin.email);
         if (foundAdmin.companyCode) {
           localStorage.setItem('kelvrin_last_company_code', foundAdmin.companyCode);
         }
@@ -1303,6 +1378,9 @@ export const LoginPage: React.FC = () => {
       const updatedAdmins = [...existingAdmins, newAdmin];
       localStorage.setItem('kelvrin_registered_admins', JSON.stringify(updatedAdmins));
       localStorage.setItem('kelvrin_registered_admin', JSON.stringify(newAdmin));
+      localStorage.setItem('kelvrin_has_registered_or_logged_in', 'true');
+      localStorage.setItem('kelvrin_last_role', 'Super Admin');
+      localStorage.setItem('kelvrin_last_username', newAdmin.username);
 
       // 3. Sync Company & Super Admin to Cloud Firestore & Backend so any system/browser can recognize them
       await Promise.allSettled([

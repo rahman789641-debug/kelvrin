@@ -75,7 +75,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(effectiveToken);
     setUser(userData);
     localStorage.setItem('kelvrin_user', JSON.stringify(userData));
+    localStorage.setItem('kelvrin_has_registered_or_logged_in', 'true');
+    localStorage.removeItem('kelvrin_logged_out');
     recordActiveSession(userData);
+    if (userData.email) {
+      localStorage.setItem('kelvrin_last_username', userData.email);
+    }
     if (userData.role) {
       localStorage.setItem('kelvrin_last_role', userData.role);
       if (userData.role !== 'Super Admin' && userData.email) {
@@ -138,8 +143,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem(`kelvrin_authorized_email_${user.role}`, user.email.toLowerCase().trim());
       }
       if (user?.email) {
+        localStorage.setItem('kelvrin_last_username', user.email);
         removeActiveSession(user.email);
       }
+      localStorage.setItem('kelvrin_has_registered_or_logged_in', 'true');
+      localStorage.setItem('kelvrin_logged_out', 'true');
       await signOutGoogleIdentity();
       setStoredToken(null);
       localStorage.removeItem('kelvrin_user');
