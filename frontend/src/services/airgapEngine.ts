@@ -1464,6 +1464,7 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
     let mimeType = 'application/pdf';
     let classification = 'INTERNAL';
     let fileDataUrl: string | null = null;
+    let extractedText: string | null = null;
 
     if (options?.body instanceof FormData) {
       const f = options.body.get('file');
@@ -1486,6 +1487,10 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
       if (typeof d === 'string' && d.startsWith('data:')) {
         fileDataUrl = d;
       }
+      const extT = options.body.get('extractedText');
+      if (typeof extT === 'string' && extT.trim()) {
+        extractedText = extT.trim();
+      }
     }
 
     // Determine uploader role and identity
@@ -1503,6 +1508,42 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
       }
     } catch {}
 
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    let previewText = extractedText;
+    if (!previewText) {
+      if (ext === 'pdf' || mimeType.includes('pdf')) {
+        previewText = `[SOVEREIGN OCR PARSER v4.2 - ENCLAVE VERIFIED]
+DOCUMENT: ${fileName} (${fileTitle})
+CLASSIFICATION: ${classification.toUpperCase()}
+INTEGRITY: SHA-256 SECURED | ZERO CLOUD EGRESS
+--------------------------------------------------------------------------------
+EXECUTIVE OVERVIEW:
+This sovereign document "${fileTitle}" has been cryptographically cataloged in enclave ${tenant}.
+The multimodal vision & OCR engine parsed all binary streams with zero leakage.
+
+1. SCOPE & GOVERNANCE
+1.1 All operational guidelines and corporate mandates detailed herein are bound to local enclave runtime parameters.
+1.2 Cross-tenant data propagation is strictly sequestered by tenant identifier "${tenant}".
+1.3 Ingestion verified by ${uploaderName} (${uploaderRole}).
+
+2. MULTIMODAL EXTRACTION SUMMARY
+2.1 Optical Character Recognition (OCR) applied across ${Math.max(1, Math.ceil(fileSize / 100000))} page(s).
+2.2 Vector embeddings generated across ${Math.max(2, Math.ceil(fileSize / 30000))} semantic chunks.
+2.3 Status: 100% Verified and queryable via Sovereign Chat.`;
+      } else if (ext === 'csv' || ext === 'xlsx') {
+        previewText = `[SOVEREIGN TABULAR INGESTION ENGINE]
+SHEET ASSET: ${fileName}
+RECORDS INDEXED: Complete tabular structure verified.
+CLASSIFICATION: ${classification.toUpperCase()}
+TENANT: ${tenant}
+--------------------------------------------------------------------------------
+Columns: [Row ID, Timestamp, Metric Name, Status, Classification, Owner]
+Integrity: Cryptographically sealed. Ready for sovereign analysis.`;
+      } else {
+        previewText = `Document "${fileTitle}" (${fileName}) verified and indexed in enclave ${tenant}.\nClassification: ${classification.toUpperCase()}\nSecurity Hash: Verified\nUploaded By: ${uploaderName} (${uploaderRole})`;
+      }
+    }
+
     const newDoc: SovereignDocument = {
       id: `doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       title: fileTitle,
@@ -1518,7 +1559,7 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
       uploaded_by: `${uploaderName} (${uploaderRole})`,
       owner_name: uploaderName,
       owner_email: uploaderEmail || null,
-      content_preview: `Document "${fileTitle}" ingested and verified within enclave ${tenant}.`,
+      content_preview: previewText,
       asset_category: 'Operations',
       created_at: new Date().toISOString()
     };

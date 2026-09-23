@@ -22,6 +22,13 @@ import {
   SovereignDocumentDetail 
 } from '../services/api';
 import { 
+  saveDocumentBlob, 
+  getDocumentObjectUrl, 
+  getDocumentDataUrl, 
+  saveDocumentDataUrl, 
+  generatePdfPreviewUrl 
+} from '../utils/documentStorage';
+import { 
   FileText, 
   UploadCloud, 
   MessageSquare, 
@@ -29,18 +36,20 @@ import {
   CheckCircle2, 
   Clock, 
   ShieldCheck, 
-  Lock,
-  FileCode,
-  Eye,
-  Download,
-  Filter,
-  Search,
-  ExternalLink,
-  RefreshCw,
-  AlertCircle,
-  FileSpreadsheet,
-  File,
-  Image as ImageIcon
+  Lock, 
+  FileCode, 
+  Eye, 
+  Download, 
+  Filter, 
+  Search, 
+  ExternalLink, 
+  RefreshCw, 
+  AlertCircle, 
+  FileSpreadsheet, 
+  File, 
+  Image as ImageIcon,
+  Copy,
+  Check
 } from 'lucide-react';
 
 export const DocumentsPage: React.FC = () => {
@@ -71,6 +80,9 @@ export const DocumentsPage: React.FC = () => {
 
   // Quick view drawer state
   const [activeDrawerDoc, setActiveDrawerDoc] = useState<SovereignDocumentDetail | null>(null);
+  const [drawerDocUrl, setDrawerDocUrl] = useState<string | null>(null);
+  const [drawerActiveTab, setDrawerActiveTab] = useState<'view' | 'text' | 'meta'>('view');
+  const [drawerCopied, setDrawerCopied] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
 
   const loadDocuments = async () => {
@@ -173,7 +185,20 @@ export const DocumentsPage: React.FC = () => {
     try {
       setDrawerLoading(true);
       const detail = await documentsApi.get(docId);
+
+      // Check if we have an object URL or data URL for viewing
+      let viewUrl = detail.file_data_url || getDocumentDataUrl(docId);
+      if (!viewUrl) {
+        const objUrl = await getDocumentObjectUrl(docId);
+        if (objUrl) viewUrl = objUrl;
+      }
+      if (!viewUrl && (detail.mime_type.includes('pdf') || detail.filename.toLowerCase().endsWith('.pdf'))) {
+        viewUrl = generatePdfPreviewUrl(detail);
+      }
+
+      setDrawerDocUrl(viewUrl);
       setActiveDrawerDoc(detail);
+      setDrawerActiveTab('view');
     } catch (err: any) {
       error('Failed to retrieve document details', err.message);
     } finally {
@@ -238,16 +263,30 @@ export const DocumentsPage: React.FC = () => {
       formData.append('title', uploadTitle.trim());
       formData.append('classification', uploadClassification);
 
-      // If file <= 700KB, also convert to data URL so any system / role can download exact original
-      if (selectedFile.size <= 700 * 1024) {
+      // Extract text content if text, code, json, csv, etc.
+      let extractedText = '';
+      const isText = selectedFile.type.startsWith('text/') || 
+                     selectedFile.name.match(/\.(txt|md|csv|json|js|ts|py|html|xml|log|yaml|yml|sql|env)$/i);
+      if (isText) {
         try {
-          const fileDataUrl = await new Promise<string>((resolve, reject) => {
+          extractedText = await selectedFile.text();
+          formData.append('extractedText', extractedText);
+        } catch (err) {
+          console.warn('[Upload] Text extraction notice:', err);
+        }
+      }
+
+      // Generate Data URL for files <= 1.5MB for instant cross-session fallback
+      let fileDataUrl: string | null = null;
+      if (selectedFile.size <= 1.5 * 1024 * 1024) {
+        try {
+          fileDataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(reader.result as string);
             reader.onerror = reject;
             reader.readAsDataURL(selectedFile);
           });
-          if (fileDataUrl) {
+          if (fileDataUrl && fileDataUrl.length <= 600000) {
             formData.append('fileDataUrl', fileDataUrl);
           }
         } catch {}
@@ -255,6 +294,12 @@ export const DocumentsPage: React.FC = () => {
 
       const newDoc = await documentsApi.upload(formData);
       if (newDoc) {
+        // Save the raw file blob into IndexedDB immediately for 100% full viewing
+        await saveDocumentBlob(newDoc.id, selectedFile);
+        if (fileDataUrl) {
+          saveDocumentDataUrl(newDoc.id, fileDataUrl);
+        }
+
         // Immediate 0ms optimistic UI update - guaranteed to appear instantly!
         setDocuments(prev => [newDoc, ...prev.filter(d => d.id !== newDoc.id)]);
         await syncDocumentToCloud(newDoc, currentCompanyCode).catch(() => {});
@@ -390,9 +435,11 @@ export const DocumentsPage: React.FC = () => {
             variant="outline"
             size="xs"
             onClick={() => handleOpenDrawer(doc.id)}
-            title="Inspect Details & Metadata"
+            title="View Document Content"
+            className="flex items-center gap-1 font-semibold text-navy-900 border-navy-200 hover:bg-blue-50"
           >
-            <Eye className="h-3.5 w-3.5" />
+            <Eye className="h-3.5 w-3.5 text-navy-800" />
+            <span>View</span>
           </Button>
           <Button
             variant="outline"
@@ -696,123 +743,308 @@ export const DocumentsPage: React.FC = () => {
       {/* Quick View Drawer */}
       <Drawer
         isOpen={Boolean(activeDrawerDoc)}
-        onClose={() => setActiveDrawerDoc(null)}
+        onClose={() => {
+          setActiveDrawerDoc(null);
+          setDrawerDocUrl(null);
+        }}
         title={activeDrawerDoc?.title || 'Document Inspection'}
-        description={activeDrawerDoc?.filename}
-        width="xl"
+        description={`${activeDrawerDoc?.filename} • ${(Number(activeDrawerDoc?.file_size_bytes || 0) / 1024 / 1024).toFixed(2)} MB`}
+        width="2xl"
       >
         {activeDrawerDoc && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             
             {/* Header badges & Actions */}
-            <div className="flex items-center justify-between gap-2 pb-4 border-b border-slate-200">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
               <div className="flex items-center gap-2">
                 {getClassificationBadge(activeDrawerDoc.classification)}
-                <Badge variant={activeDrawerDoc.status === 'READY' ? 'success' : 'neutral'} size="sm" dot>
+                <Badge variant={activeDrawerDoc.status === 'READY' || activeDrawerDoc.status === 'COMPLETED' ? 'success' : 'neutral'} size="sm" dot>
                   {activeDrawerDoc.status}
                 </Badge>
               </div>
               <div className="flex items-center gap-2">
+                {drawerDocUrl && (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={() => window.open(drawerDocUrl, '_blank')}
+                    title="Open document in new browser tab"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                    New Tab
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="xs"
                   onClick={() => navigate(`/documents/${activeDrawerDoc.id}`)}
                 >
-                  <ExternalLink className="h-3.5 w-3.5" />
                   Full Page View
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="primary"
                   size="xs"
                   onClick={() => handleDownload(activeDrawerDoc)}
                 >
-                  <Download className="h-3.5 w-3.5" />
+                  <Download className="h-3.5 w-3.5 mr-1" />
                   Download
                 </Button>
               </div>
             </div>
 
-            {/* Content Preview Box */}
-            <div>
-              <span className="text-xs font-bold text-slate-700 block mb-1.5 flex items-center gap-1.5">
-                <FileCode className="h-4 w-4 text-purple-600" />
-                Local Text Preview Snippet
-              </span>
-              <div className="bg-slate-900 text-slate-200 p-4 rounded-xl font-mono text-xs max-h-56 overflow-y-auto leading-relaxed border border-slate-800 whitespace-pre-wrap selection:bg-purple-900">
-                {activeDrawerDoc.content_preview || 'No text snippet available.'}
-              </div>
+            {/* Navigation Tabs */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setDrawerActiveTab('view')}
+                className={`flex-1 py-1.5 px-3 rounded-md transition-all flex items-center justify-center gap-1.5 ${
+                  drawerActiveTab === 'view'
+                    ? 'bg-white text-navy-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Eye className="h-3.5 w-3.5 text-navy-800" />
+                <span>Document Viewer</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDrawerActiveTab('text')}
+                className={`flex-1 py-1.5 px-3 rounded-md transition-all flex items-center justify-center gap-1.5 ${
+                  drawerActiveTab === 'text'
+                    ? 'bg-white text-navy-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <FileCode className="h-3.5 w-3.5 text-purple-600" />
+                <span>Extracted Text</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDrawerActiveTab('meta')}
+                className={`flex-1 py-1.5 px-3 rounded-md transition-all flex items-center justify-center gap-1.5 ${
+                  drawerActiveTab === 'meta'
+                    ? 'bg-white text-navy-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Metadata & Logs</span>
+              </button>
             </div>
 
-            {/* Technical Metadata */}
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
-                <span className="text-slate-400 text-[10px] block">MIME Type</span>
-                <span className="font-mono text-slate-800 font-semibold">{activeDrawerDoc.mime_type}</span>
-              </div>
-              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
-                <span className="text-slate-400 text-[10px] block">File Size</span>
-                <span className="font-mono text-slate-800 font-semibold">
-                  {(activeDrawerDoc.file_size_bytes / 1024 / 1024).toFixed(2)} MB
-                </span>
-              </div>
-              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/70 col-span-2">
-                <span className="text-slate-400 text-[10px] block">SHA-256 Hash</span>
-                <span className="font-mono text-slate-800 break-all text-[11px] block mt-0.5">
-                  {activeDrawerDoc.sha256_hash}
-                </span>
-              </div>
-              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
-                <span className="text-slate-400 text-[10px] block">Pages & Chunks</span>
-                <span className="text-slate-800 font-semibold">
-                  {activeDrawerDoc.total_pages} pages / {activeDrawerDoc.total_chunks} chunks
-                </span>
-              </div>
-              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
-                <span className="text-slate-400 text-[10px] block">Uploaded By</span>
-                <span className="text-slate-800 font-semibold">
-                  {activeDrawerDoc.owner_name || activeDrawerDoc.owner_email || 'Sovereign Operator'}
-                </span>
-              </div>
-            </div>
-
-            {/* Permitted Operations */}
-            <div>
-              <span className="text-xs font-bold text-slate-700 block mb-1.5">
-                Caller Clearance Operations
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {activeDrawerDoc.permissions?.map(perm => (
-                  <Badge key={perm} variant={perm === 'DELETE' ? 'danger' : 'neutral'} size="sm">
-                    {perm}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-
-            {/* Recent Audit Activity */}
-            <div>
-              <span className="text-xs font-bold text-slate-700 block mb-1.5 flex items-center gap-1.5">
-                <Clock className="h-4 w-4 text-blue-600" />
-                Recent Governance Events
-              </span>
-              {activeDrawerDoc.activity && activeDrawerDoc.activity.length > 0 ? (
-                <div className="space-y-2 text-xs">
-                  {activeDrawerDoc.activity.map((act, i) => (
-                    <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100">
-                      <div>
-                        <span className="font-mono font-bold text-slate-800 text-[11px]">{act.action}</span>
-                        <span className="text-[10px] text-slate-500 block">{act.actor_email}</span>
-                      </div>
-                      <span className="text-[10px] text-slate-400">
-                        {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {/* TAB 1: Document Viewer */}
+            {drawerActiveTab === 'view' && (
+              <div className="space-y-3">
+                {/* 1. PDF Viewer */}
+                {(activeDrawerDoc.mime_type.includes('pdf') || activeDrawerDoc.filename.toLowerCase().endsWith('.pdf')) && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                      <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                        <FileText className="h-4 w-4 text-red-600" />
+                        PDF Document Visual Preview
                       </span>
+                      {drawerDocUrl && (
+                        <a 
+                          href={drawerDocUrl} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="text-navy-900 font-semibold hover:underline flex items-center gap-1 text-[11px]"
+                        >
+                          <ExternalLink className="h-3 w-3" /> Full Screen Window
+                        </a>
+                      )}
                     </div>
-                  ))}
+                    {drawerDocUrl ? (
+                      <div className="relative rounded-xl border border-slate-300 shadow-sm overflow-hidden bg-slate-800">
+                        <iframe
+                          src={drawerDocUrl}
+                          title={activeDrawerDoc.title}
+                          className="w-full h-[580px] bg-white border-0"
+                        />
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center bg-slate-50 rounded-xl border border-slate-200">
+                        <FileText className="h-10 w-10 text-red-500 mx-auto mb-2" />
+                        <p className="text-xs font-semibold text-slate-700">PDF binary indexed in sovereign vault</p>
+                        <p className="text-[11px] text-slate-500 mt-1 mb-3">Download the file or inspect the extracted clauses below.</p>
+                        <Button variant="outline" size="sm" onClick={() => handleDownload(activeDrawerDoc)}>
+                          <Download className="h-3.5 w-3.5 mr-1" /> Download PDF File
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 2. Image Viewer */}
+                {(activeDrawerDoc.mime_type.startsWith('image/') || activeDrawerDoc.filename.match(/\.(png|jpe?g|webp|gif|svg)$/i)) && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                      <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                        <ImageIcon className="h-4 w-4 text-purple-600" />
+                        High-Resolution Visual Image Preview
+                      </span>
+                      {drawerDocUrl && (
+                        <a 
+                          href={drawerDocUrl} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="text-navy-900 font-semibold hover:underline flex items-center gap-1 text-[11px]"
+                        >
+                          <ExternalLink className="h-3 w-3" /> View Original
+                        </a>
+                      )}
+                    </div>
+                    {drawerDocUrl ? (
+                      <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-center min-h-[380px] max-h-[580px] overflow-hidden">
+                        <img
+                          src={drawerDocUrl}
+                          alt={activeDrawerDoc.title}
+                          className="max-h-[520px] max-w-full rounded-lg shadow-md object-contain bg-white"
+                        />
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center bg-slate-50 rounded-xl border border-slate-200">
+                        <ImageIcon className="h-10 w-10 text-purple-500 mx-auto mb-2" />
+                        <p className="text-xs font-semibold text-slate-700">Image binary stored in enclave vault</p>
+                        <Button variant="outline" size="sm" className="mt-3" onClick={() => handleDownload(activeDrawerDoc)}>
+                          <Download className="h-3.5 w-3.5 mr-1" /> Download Image
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. Text / Code / Markdown Viewer */}
+                {!(activeDrawerDoc.mime_type.includes('pdf') || activeDrawerDoc.filename.toLowerCase().endsWith('.pdf')) &&
+                 !(activeDrawerDoc.mime_type.startsWith('image/') || activeDrawerDoc.filename.match(/\.(png|jpe?g|webp|gif|svg)$/i)) && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                      <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                        <FileCode className="h-4 w-4 text-blue-600" />
+                        Document Content & Structured Data Reader
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        onClick={() => {
+                          navigator.clipboard.writeText(activeDrawerDoc.content_preview || '');
+                          setDrawerCopied(true);
+                          setTimeout(() => setDrawerCopied(false), 2000);
+                          success('Copied', 'Content copied to clipboard.');
+                        }}
+                      >
+                        {drawerCopied ? <Check className="h-3 w-3 text-emerald-600 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                        <span>{drawerCopied ? 'Copied!' : 'Copy Content'}</span>
+                      </Button>
+                    </div>
+                    <div className="bg-slate-900 text-slate-100 p-4 rounded-xl font-mono text-xs max-h-[520px] overflow-y-auto leading-relaxed border border-slate-800 whitespace-pre-wrap selection:bg-purple-900">
+                      {activeDrawerDoc.content_preview || 'No raw content found for this document.'}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: Extracted Text */}
+            {drawerActiveTab === 'text' && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                  <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                    <FileText className="h-4 w-4 text-purple-600" />
+                    Multimodal OCR & Clause Stream
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={() => {
+                      navigator.clipboard.writeText(activeDrawerDoc.content_preview || '');
+                      setDrawerCopied(true);
+                      setTimeout(() => setDrawerCopied(false), 2000);
+                      success('Copied', 'Extracted clauses copied.');
+                    }}
+                  >
+                    {drawerCopied ? <Check className="h-3 w-3 text-emerald-600 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                    <span>{drawerCopied ? 'Copied!' : 'Copy Text'}</span>
+                  </Button>
                 </div>
-              ) : (
-                <p className="text-xs text-slate-400 italic">No activity recorded yet.</p>
-              )}
-            </div>
+                <div className="bg-slate-950 text-slate-100 p-4 rounded-xl font-mono text-xs max-h-[520px] overflow-y-auto leading-relaxed border border-slate-800 whitespace-pre-wrap selection:bg-purple-900">
+                  {activeDrawerDoc.content_preview || 'No extracted text available.'}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: Metadata & Governance */}
+            {drawerActiveTab === 'meta' && (
+              <div className="space-y-4">
+                {/* Technical Metadata */}
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
+                    <span className="text-slate-400 text-[10px] block">MIME Type</span>
+                    <span className="font-mono text-slate-800 font-semibold">{activeDrawerDoc.mime_type}</span>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
+                    <span className="text-slate-400 text-[10px] block">File Size</span>
+                    <span className="font-mono text-slate-800 font-semibold">
+                      {(activeDrawerDoc.file_size_bytes / 1024 / 1024).toFixed(2)} MB
+                    </span>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/70 col-span-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 text-[10px] block">SHA-256 Checksum</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(activeDrawerDoc.sha256_hash);
+                          success('Copied', 'SHA-256 hash copied.');
+                        }}
+                        className="text-[10px] text-navy-900 font-semibold hover:underline flex items-center gap-1"
+                      >
+                        <Copy className="h-3 w-3" /> Copy
+                      </button>
+                    </div>
+                    <span className="font-mono text-slate-800 break-all text-[11px] block mt-0.5">
+                      {activeDrawerDoc.sha256_hash}
+                    </span>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
+                    <span className="text-slate-400 text-[10px] block">Pages & Chunks</span>
+                    <span className="text-slate-800 font-semibold">
+                      {activeDrawerDoc.total_pages} pages / {activeDrawerDoc.total_chunks} chunks
+                    </span>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
+                    <span className="text-slate-400 text-[10px] block">Uploaded By</span>
+                    <span className="text-slate-800 font-semibold">
+                      {activeDrawerDoc.owner_name || activeDrawerDoc.owner_email || 'Sovereign Operator'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Governance Events */}
+                <div>
+                  <span className="text-xs font-bold text-slate-700 block mb-1.5 flex items-center gap-1.5">
+                    <Clock className="h-4 w-4 text-blue-600" />
+                    Recent Governance Events
+                  </span>
+                  {activeDrawerDoc.activity && activeDrawerDoc.activity.length > 0 ? (
+                    <div className="space-y-2 text-xs">
+                      {activeDrawerDoc.activity.map((act, i) => (
+                        <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100">
+                          <div>
+                            <span className="font-mono font-bold text-slate-800 text-[11px]">{act.action}</span>
+                            <span className="text-[10px] text-slate-500 block">{act.actor_email}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">
+                            {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">No activity recorded yet.</p>
+                  )}
+                </div>
+              </div>
+            )}
 
           </div>
         )}
