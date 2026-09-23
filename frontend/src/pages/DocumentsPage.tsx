@@ -23,12 +23,15 @@ import {
 } from '../services/api';
 import { 
   saveDocumentBlob, 
+  getDocumentBlob,
   getDocumentObjectUrl, 
   getDocumentDataUrl, 
   saveDocumentDataUrl, 
   generatePdfPreviewUrl,
   deleteDocumentBlob
 } from '../utils/documentStorage';
+import { parseDocumentBlob } from '../utils/officeParser';
+import { UniversalDocumentViewer } from '../components/UniversalDocumentViewer';
 import { meshSync } from '../services/meshSync';
 import { 
   FileText, 
@@ -51,7 +54,8 @@ import {
   File, 
   Image as ImageIcon,
   Copy,
-  Check
+  Check,
+  Presentation
 } from 'lucide-react';
 
 export const DocumentsPage: React.FC = () => {
@@ -83,6 +87,7 @@ export const DocumentsPage: React.FC = () => {
   // Quick view drawer state
   const [activeDrawerDoc, setActiveDrawerDoc] = useState<SovereignDocumentDetail | null>(null);
   const [drawerDocUrl, setDrawerDocUrl] = useState<string | null>(null);
+  const [drawerBlob, setDrawerBlob] = useState<Blob | null>(null);
   const [drawerActiveTab, setDrawerActiveTab] = useState<'view' | 'text' | 'meta'>('view');
   const [drawerCopied, setDrawerCopied] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
@@ -195,13 +200,19 @@ export const DocumentsPage: React.FC = () => {
       setDrawerLoading(true);
       const detail = await documentsApi.get(docId);
 
-      // Check if we have an object URL or data URL for viewing
+      // Check if we have an object URL or data URL or raw binary blob for viewing
+      const blob = await getDocumentBlob(docId);
+      setDrawerBlob(blob);
+
       let viewUrl = detail.file_data_url || getDocumentDataUrl(docId);
+      if (!viewUrl && blob) {
+        viewUrl = URL.createObjectURL(blob);
+      }
       if (!viewUrl) {
         const objUrl = await getDocumentObjectUrl(docId);
         if (objUrl) viewUrl = objUrl;
       }
-      if (!viewUrl && (detail.mime_type.includes('pdf') || detail.filename.toLowerCase().endsWith('.pdf'))) {
+      if (!viewUrl && (detail.mime_type?.includes('pdf') || detail.filename.toLowerCase().endsWith('.pdf'))) {
         viewUrl = generatePdfPreviewUrl(detail);
       }
 
@@ -281,17 +292,16 @@ export const DocumentsPage: React.FC = () => {
       formData.append('title', uploadTitle.trim());
       formData.append('classification', uploadClassification);
 
-      // Extract text content if text, code, json, csv, etc.
+      // Extract text content from office documents (.docx, .xlsx, .pptx), text, code, csv
       let extractedText = '';
-      const isText = selectedFile.type.startsWith('text/') || 
-                     selectedFile.name.match(/\.(txt|md|csv|json|js|ts|py|html|xml|log|yaml|yml|sql|env)$/i);
-      if (isText) {
-        try {
-          extractedText = await selectedFile.text();
+      try {
+        const parsed = await parseDocumentBlob(selectedFile, selectedFile.name);
+        if (parsed.rawText) {
+          extractedText = parsed.rawText;
           formData.append('extractedText', extractedText);
-        } catch (err) {
-          console.warn('[Upload] Text extraction notice:', err);
         }
+      } catch (err) {
+        console.warn('[Upload] Office parsing notice:', err);
       }
 
       // Generate Data URL for files <= 1.5MB for instant cross-session fallback
@@ -341,11 +351,14 @@ export const DocumentsPage: React.FC = () => {
     if (mime.includes('pdf') || ext === 'pdf') {
       return <FileText className="h-4 w-4 text-red-600" />;
     }
-    if (ext === 'docx' || mime.includes('word')) {
+    if (ext === 'docx' || ext === 'doc' || mime.includes('word')) {
       return <FileText className="h-4 w-4 text-blue-600" />;
     }
-    if (ext === 'xlsx' || mime.includes('sheet')) {
+    if (ext === 'xlsx' || ext === 'xls' || ext === 'csv' || mime.includes('sheet') || mime.includes('csv')) {
       return <FileSpreadsheet className="h-4 w-4 text-emerald-600" />;
+    }
+    if (ext === 'pptx' || ext === 'ppt' || mime.includes('presentation') || mime.includes('powerpoint')) {
+      return <Presentation className="h-4 w-4 text-orange-600" />;
     }
     if (mime.startsWith('image/')) {
       return <ImageIcon className="h-4 w-4 text-purple-600" />;
@@ -613,10 +626,11 @@ export const DocumentsPage: React.FC = () => {
             className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-navy-900"
           >
             <option value="ALL">All Formats</option>
-            <option value="pdf">PDF Documents</option>
-            <option value="docx">Word (.docx)</option>
-            <option value="xlsx">Excel (.xlsx)</option>
-            <option value="txt">Plain Text (.txt)</option>
+            <option value="pdf">PDF Documents (.pdf)</option>
+            <option value="docx">Word (.docx, .doc)</option>
+            <option value="xlsx">Excel (.xlsx, .xls, .csv)</option>
+            <option value="pptx">PowerPoint (.pptx, .ppt)</option>
+            <option value="txt">Plain Text (.txt, .md)</option>
             <option value="image">Scanned Images</option>
           </select>
         </div>
@@ -726,7 +740,7 @@ export const DocumentsPage: React.FC = () => {
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
-              accept=".pdf,.docx,.xlsx,.txt,.png,.jpg,.jpeg"
+              accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.csv,.json,.md,.png,.jpg,.jpeg,.webp"
               className="hidden"
               disabled={isUploading}
             />
@@ -745,7 +759,7 @@ export const DocumentsPage: React.FC = () => {
               ) : (
                 <div>
                   <p className="text-xs font-semibold text-slate-700">Click to choose file from local disk</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">PDF, DOCX, XLSX, TXT, PNG, JPG/JPEG (Max 50 MB)</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">PPT/PPTX, PDF, DOCX/DOC, XLSX/XLS, CSV, Images (Up to 50 MB)</p>
                 </div>
               )}
             </div>
@@ -764,6 +778,7 @@ export const DocumentsPage: React.FC = () => {
         onClose={() => {
           setActiveDrawerDoc(null);
           setDrawerDocUrl(null);
+          setDrawerBlob(null);
         }}
         title={activeDrawerDoc?.title || 'Document Inspection'}
         description={`${activeDrawerDoc?.filename} • ${(Number(activeDrawerDoc?.file_size_bytes || 0) / 1024 / 1024).toFixed(2)} MB`}
@@ -862,115 +877,12 @@ export const DocumentsPage: React.FC = () => {
 
             {/* TAB 1: Document Viewer */}
             {drawerActiveTab === 'view' && (
-              <div className="space-y-3">
-                {/* 1. PDF Viewer */}
-                {(activeDrawerDoc.mime_type.includes('pdf') || activeDrawerDoc.filename.toLowerCase().endsWith('.pdf')) && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-                      <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                        <FileText className="h-4 w-4 text-red-600" />
-                        PDF Document Visual Preview
-                      </span>
-                      {drawerDocUrl && (
-                        <a 
-                          href={drawerDocUrl} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="text-navy-900 font-semibold hover:underline flex items-center gap-1 text-[11px]"
-                        >
-                          <ExternalLink className="h-3 w-3" /> Full Screen Window
-                        </a>
-                      )}
-                    </div>
-                    {drawerDocUrl ? (
-                      <div className="relative rounded-xl border border-slate-300 shadow-sm overflow-hidden bg-slate-800">
-                        <iframe
-                          src={drawerDocUrl}
-                          title={activeDrawerDoc.title}
-                          className="w-full h-[580px] bg-white border-0"
-                        />
-                      </div>
-                    ) : (
-                      <div className="p-8 text-center bg-slate-50 rounded-xl border border-slate-200">
-                        <FileText className="h-10 w-10 text-red-500 mx-auto mb-2" />
-                        <p className="text-xs font-semibold text-slate-700">PDF binary indexed in sovereign vault</p>
-                        <p className="text-[11px] text-slate-500 mt-1 mb-3">Download the file or inspect the extracted clauses below.</p>
-                        <Button variant="outline" size="sm" onClick={() => handleDownload(activeDrawerDoc)}>
-                          <Download className="h-3.5 w-3.5 mr-1" /> Download PDF File
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 2. Image Viewer */}
-                {(activeDrawerDoc.mime_type.startsWith('image/') || activeDrawerDoc.filename.match(/\.(png|jpe?g|webp|gif|svg)$/i)) && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-                      <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                        <ImageIcon className="h-4 w-4 text-purple-600" />
-                        High-Resolution Visual Image Preview
-                      </span>
-                      {drawerDocUrl && (
-                        <a 
-                          href={drawerDocUrl} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="text-navy-900 font-semibold hover:underline flex items-center gap-1 text-[11px]"
-                        >
-                          <ExternalLink className="h-3 w-3" /> View Original
-                        </a>
-                      )}
-                    </div>
-                    {drawerDocUrl ? (
-                      <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-center min-h-[380px] max-h-[580px] overflow-hidden">
-                        <img
-                          src={drawerDocUrl}
-                          alt={activeDrawerDoc.title}
-                          className="max-h-[520px] max-w-full rounded-lg shadow-md object-contain bg-white"
-                        />
-                      </div>
-                    ) : (
-                      <div className="p-8 text-center bg-slate-50 rounded-xl border border-slate-200">
-                        <ImageIcon className="h-10 w-10 text-purple-500 mx-auto mb-2" />
-                        <p className="text-xs font-semibold text-slate-700">Image binary stored in enclave vault</p>
-                        <Button variant="outline" size="sm" className="mt-3" onClick={() => handleDownload(activeDrawerDoc)}>
-                          <Download className="h-3.5 w-3.5 mr-1" /> Download Image
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 3. Text / Code / Markdown Viewer */}
-                {!(activeDrawerDoc.mime_type.includes('pdf') || activeDrawerDoc.filename.toLowerCase().endsWith('.pdf')) &&
-                 !(activeDrawerDoc.mime_type.startsWith('image/') || activeDrawerDoc.filename.match(/\.(png|jpe?g|webp|gif|svg)$/i)) && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-                      <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                        <FileCode className="h-4 w-4 text-blue-600" />
-                        Document Content & Structured Data Reader
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        onClick={() => {
-                          navigator.clipboard.writeText(activeDrawerDoc.content_preview || '');
-                          setDrawerCopied(true);
-                          setTimeout(() => setDrawerCopied(false), 2000);
-                          success('Copied', 'Content copied to clipboard.');
-                        }}
-                      >
-                        {drawerCopied ? <Check className="h-3 w-3 text-emerald-600 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
-                        <span>{drawerCopied ? 'Copied!' : 'Copy Content'}</span>
-                      </Button>
-                    </div>
-                    <div className="bg-slate-900 text-slate-100 p-4 rounded-xl font-mono text-xs max-h-[520px] overflow-y-auto leading-relaxed border border-slate-800 whitespace-pre-wrap selection:bg-purple-900">
-                      {activeDrawerDoc.content_preview || 'No raw content found for this document.'}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <UniversalDocumentViewer
+                document={activeDrawerDoc}
+                fileBlob={drawerBlob}
+                fileUrl={drawerDocUrl}
+                onDownload={() => handleDownload(activeDrawerDoc)}
+              />
             )}
 
             {/* TAB 2: Extracted Text */}

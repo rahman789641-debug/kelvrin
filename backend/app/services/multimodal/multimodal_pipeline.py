@@ -245,18 +245,31 @@ class SovereignMultimodalPipeline:
             )]
             full_text = f"[VISUAL SUMMARY: {asset_category}]\n{visual_summaries[0]['description'] if visual_summaries else ''}\n\n[EXTRACTED TEXT]:\n{img_text}"
 
-        elif ext in [".docx", ".xlsx"]:
+        elif ext in [".docx", ".xlsx", ".pptx"]:
             await self.log_step(db, doc_id, "PROCESSING", f"Unpacking OpenXML archive ({ext}).")
             if not zipfile.is_zipfile(file_path):
                 raise ValueError("Corrupted OpenXML archive: file is not a valid zip container.")
 
             with zipfile.ZipFile(file_path, "r") as z:
-                xml_target = "word/document.xml" if ext == ".docx" else "xl/sharedStrings.xml"
-                if xml_target in z.namelist():
-                    raw_xml = z.read(xml_target).decode("utf-8", errors="replace")
-                    import re
-                    clean_text = re.sub(r"<[^>]+>", " ", raw_xml)
-                    full_text = re.sub(r"\s+", " ", clean_text).strip()
+                import re
+                if ext == ".docx":
+                    xml_targets = ["word/document.xml"]
+                elif ext == ".xlsx":
+                    xml_targets = ["xl/sharedStrings.xml"] + [n for n in z.namelist() if n.startswith("xl/worksheets/sheet")]
+                else:  # .pptx
+                    xml_targets = sorted([n for n in z.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")])
+
+                extracted_parts = []
+                for xml_target in xml_targets:
+                    if xml_target in z.namelist():
+                        raw_xml = z.read(xml_target).decode("utf-8", errors="replace")
+                        clean_text = re.sub(r"<[^>]+>", " ", raw_xml)
+                        clean_text = re.sub(r"\s+", " ", clean_text).strip()
+                        if clean_text:
+                            extracted_parts.append(clean_text)
+
+                if extracted_parts:
+                    full_text = "\n\n".join(extracted_parts)
                 else:
                     full_text = f"OpenXML archive verified without standard textual stream: {document.filename}"
 
@@ -268,7 +281,7 @@ class SovereignMultimodalPipeline:
                 ocr_applied=False
             )]
 
-        elif ext == ".txt":
+        elif ext in [".txt", ".csv", ".json", ".md"]:
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 full_text = f.read()
 
@@ -279,8 +292,23 @@ class SovereignMultimodalPipeline:
                 is_scanned=False,
                 ocr_applied=False
             )]
+
+        elif ext in [".doc", ".xls", ".ppt"]:
+            # Legacy binary Microsoft Office formats: extract printable strings
+            with open(file_path, "rb") as f:
+                raw_bytes = f.read()
+            import re
+            strings = re.findall(b"[\x20-\x7E]{4,}", raw_bytes)
+            full_text = "\n".join(s.decode("latin-1", errors="replace") for s in strings[:1000])
+            pages = [PageRepresentation(
+                page_number=1,
+                text=full_text or f"Binary document indexed: {document.filename}",
+                has_images=False,
+                is_scanned=False,
+                ocr_applied=False
+            )]
         else:
-            raise ValueError(f"Unsupported file format '{ext}'. Permitted formats: PDF, DOCX, XLSX, TXT, PNG, JPG, JPEG.")
+            raise ValueError(f"Unsupported file format '{ext}'. Permitted formats: PDF, DOCX, DOC, XLSX, XLS, PPTX, PPT, CSV, TXT, JSON, MD, PNG, JPG, JPEG.")
 
         # Update document record with normalized properties
         document.total_pages = len(pages)

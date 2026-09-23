@@ -20,6 +20,14 @@ FORMAT_CONFIG: Dict[str, Dict] = {
         "magic_prefixes": [b"PK\x03\x04"],
         "category": "DOCX"
     },
+    ".doc": {
+        "mime_types": [
+            "application/msword",
+            "application/octet-stream"
+        ],
+        "magic_prefixes": [b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"],
+        "category": "DOC"
+    },
     ".xlsx": {
         "mime_types": [
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -28,6 +36,59 @@ FORMAT_CONFIG: Dict[str, Dict] = {
         ],
         "magic_prefixes": [b"PK\x03\x04"],
         "category": "XLSX"
+    },
+    ".xls": {
+        "mime_types": [
+            "application/vnd.ms-excel",
+            "application/octet-stream"
+        ],
+        "magic_prefixes": [b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"],
+        "category": "XLS"
+    },
+    ".pptx": {
+        "mime_types": [
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/zip",
+            "application/octet-stream"
+        ],
+        "magic_prefixes": [b"PK\x03\x04"],
+        "category": "PPTX"
+    },
+    ".ppt": {
+        "mime_types": [
+            "application/vnd.ms-powerpoint",
+            "application/octet-stream"
+        ],
+        "magic_prefixes": [b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"],
+        "category": "PPT"
+    },
+    ".csv": {
+        "mime_types": [
+            "text/csv",
+            "text/plain",
+            "application/csv",
+            "application/octet-stream"
+        ],
+        "magic_prefixes": [],
+        "category": "CSV"
+    },
+    ".json": {
+        "mime_types": [
+            "application/json",
+            "text/plain",
+            "application/octet-stream"
+        ],
+        "magic_prefixes": [],
+        "category": "JSON"
+    },
+    ".md": {
+        "mime_types": [
+            "text/markdown",
+            "text/plain",
+            "application/octet-stream"
+        ],
+        "magic_prefixes": [],
+        "category": "MARKDOWN"
     },
     ".txt": {
         "mime_types": [
@@ -134,7 +195,7 @@ def validate_file_format(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"File content spoofing detected: Header bytes do not match expected signature for {category} ({ext})"
             )
-    elif ext == ".txt":
+    elif ext in [".txt", ".csv", ".json", ".md"]:
         # Validate text integrity (no binary null bytes, decodable text)
         if b"\x00" in header_bytes[:512]:
             raise HTTPException(

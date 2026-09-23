@@ -19,12 +19,14 @@ import { useAuth } from '../context/AuthContext';
 import { getActiveCompany } from '../services/accessControl';
 import { 
   saveDocumentBlob, 
+  getDocumentBlob,
   getDocumentObjectUrl, 
   getDocumentDataUrl, 
   saveDocumentDataUrl, 
   generatePdfPreviewUrl,
   deleteDocumentBlob
 } from '../utils/documentStorage';
+import { UniversalDocumentViewer } from '../components/UniversalDocumentViewer';
 import { 
   FileText, 
   Download, 
@@ -67,6 +69,7 @@ export const DocumentDetailsPage: React.FC = () => {
 
   const [document, setDocument] = useState<SovereignDocumentDetail | null>(null);
   const [docUrl, setDocUrl] = useState<string | null>(null);
+  const [docBlob, setDocBlob] = useState<Blob | null>(null);
   const [copiedText, setCopiedText] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [deleting, setDeleting] = useState<boolean>(false);
@@ -106,13 +109,20 @@ export const DocumentDetailsPage: React.FC = () => {
         setLogs(data.recent_logs);
       }
 
+      // Resolve document binary Blob from IndexedDB vault for 100% full content rendering
+      const blob = await getDocumentBlob(docId);
+      setDocBlob(blob);
+
       // Resolve document view URL for visual rendering
       let viewUrl = data.file_data_url || getDocumentDataUrl(docId);
+      if (!viewUrl && blob) {
+        viewUrl = URL.createObjectURL(blob);
+      }
       if (!viewUrl) {
         const objUrl = await getDocumentObjectUrl(docId);
         if (objUrl) viewUrl = objUrl;
       }
-      if (!viewUrl && (data.mime_type.includes('pdf') || data.filename.toLowerCase().endsWith('.pdf'))) {
+      if (!viewUrl && (data.mime_type?.includes('pdf') || data.filename.toLowerCase().endsWith('.pdf'))) {
         viewUrl = generatePdfPreviewUrl(data);
       }
       setDocUrl(viewUrl);
@@ -488,92 +498,12 @@ export const DocumentDetailsPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* 1. PDF Embedded Viewer */}
-                  {(document.mime_type.includes('pdf') || document.filename.toLowerCase().endsWith('.pdf')) && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-                        <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                          <FileText className="h-4 w-4 text-red-600" />
-                          Live Sovereign PDF Viewer
-                        </span>
-                        {docUrl && (
-                          <a
-                            href={docUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-navy-900 font-semibold hover:underline flex items-center gap-1 text-[11px]"
-                          >
-                            <ExternalLink className="h-3 w-3" /> Full Screen Window
-                          </a>
-                        )}
-                      </div>
-                      {docUrl ? (
-                        <div className="rounded-xl border border-slate-300 shadow-sm overflow-hidden bg-slate-900">
-                          <iframe
-                            src={docUrl}
-                            title={document.title}
-                            className="w-full h-[640px] bg-white border-0"
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-
-                  {/* 2. Image Embedded Viewer */}
-                  {(document.mime_type.startsWith('image/') || document.filename.match(/\.(png|jpe?g|webp|gif|svg)$/i)) && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-                        <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                          <ImageIcon className="h-4 w-4 text-purple-600" />
-                          High-Resolution Sovereign Image Preview
-                        </span>
-                        {docUrl && (
-                          <a
-                            href={docUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-navy-900 font-semibold hover:underline flex items-center gap-1 text-[11px]"
-                          >
-                            <ExternalLink className="h-3 w-3" /> View Original
-                          </a>
-                        )}
-                      </div>
-                      {docUrl && (
-                        <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-center min-h-[380px] max-h-[600px] overflow-hidden">
-                          <img
-                            src={docUrl}
-                            alt={document.title}
-                            className="max-h-[550px] max-w-full rounded-lg shadow-md object-contain bg-white"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 3. Text / Raw Excerpt Content Box */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-                      <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                        <FileCode className="h-4 w-4 text-blue-600" />
-                        Extracted Document Clauses & Text Stream
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        onClick={() => {
-                          copyToClipboard(document.content_preview || '', 'Document text');
-                          setCopiedText(true);
-                          setTimeout(() => setCopiedText(false), 2000);
-                        }}
-                      >
-                        {copiedText ? <Check className="h-3.5 w-3.5 text-emerald-600 mr-1" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
-                        <span>{copiedText ? 'Copied!' : 'Copy Text'}</span>
-                      </Button>
-                    </div>
-                    <div className="bg-slate-900 text-slate-100 p-4 rounded-xl font-mono text-xs max-h-96 overflow-y-auto leading-relaxed border border-slate-800 whitespace-pre-wrap selection:bg-purple-900">
-                      {document.content_preview || 'No text excerpt available for this asset.'}
-                    </div>
-                  </div>
+                  <UniversalDocumentViewer
+                    document={document}
+                    fileBlob={docBlob}
+                    fileUrl={docUrl}
+                    onDownload={handleDownload}
+                  />
                 </div>
               )}
 
