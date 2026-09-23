@@ -59,7 +59,7 @@ export const DeliverablesPage: React.FC = () => {
         status: statusFilter !== 'ALL' ? statusFilter : undefined,
         search: searchQuery || undefined
       });
-      setDeliverables(data);
+      setDeliverables(Array.isArray(data) ? data : []);
     } catch (err: any) {
       error('Failed to load deliverables', err.message);
     } finally {

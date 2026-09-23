@@ -37,7 +37,7 @@ export const SecurityPage: React.FC = () => {
         connectorsApi.list()
       ]);
       setDashboard(dashData);
-      setConnectors(connData);
+      setConnectors(Array.isArray(connData) ? connData : []);
     } catch (err: any) {
       error('Security Data Load Failed', err.message || 'Unable to fetch security dashboard metrics.');
     } finally {

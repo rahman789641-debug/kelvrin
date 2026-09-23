@@ -101,7 +101,7 @@ export const KnowledgeBasePage: React.FC = () => {
     try {
       setLoadingDocs(true);
       const docs = await documentsApi.list();
-      setDocuments(docs.items);
+      setDocuments(Array.isArray(docs) ? docs : (docs?.items || []));
     } catch (err: any) {
       console.error('Failed to load documents for KB:', err);
     } finally {
@@ -118,9 +118,9 @@ export const KnowledgeBasePage: React.FC = () => {
         page_size: 10,
         q: query || undefined
       });
-      setChunks(res.items);
-      setTotalChunks(res.total_records);
-      setChunkPage(res.page);
+      setChunks(Array.isArray(res?.items) ? res.items : []);
+      setTotalChunks(res?.total_records || 0);
+      setChunkPage(res?.page || 1);
     } catch (err: any) {
       console.error('Failed to load vector chunks:', err);
     } finally {

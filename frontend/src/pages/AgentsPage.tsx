@@ -93,14 +93,18 @@ export const AgentsPage: React.FC = () => {
         agentsApi.listTemplates().catch(() => []),
         agentsApi.listRuns().catch(() => [])
       ]);
-      setAgents(agentsData);
-      setTemplates(templatesData);
-      setRuns(runsData);
+      const safeAgents = Array.isArray(agentsData) ? agentsData : [];
+      const safeTemplates = Array.isArray(templatesData) ? templatesData : [];
+      const safeRuns = Array.isArray(runsData) ? runsData : [];
 
-      if (runsData.length > 0 && !selectedRun) {
-        setSelectedRun(runsData[0]);
+      setAgents(safeAgents);
+      setTemplates(safeTemplates);
+      setRuns(safeRuns);
+
+      if (safeRuns.length > 0 && !selectedRun) {
+        setSelectedRun(safeRuns[0]);
       } else if (selectedRun) {
-        const updated = runsData.find(r => r.id === selectedRun.id);
+        const updated = safeRuns.find(r => r.id === selectedRun.id);
         if (updated) setSelectedRun(updated);
       }
     } catch (err: any) {

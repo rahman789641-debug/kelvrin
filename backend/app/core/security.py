@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 from jose import jwt, JWTError  # type: ignore
 import bcrypt
 import hashlib
@@ -85,7 +85,10 @@ def create_access_token(
         "iss": "kelvrin-sovereign-gateway",
         "jti": token_jti
     }
-    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.ALGORITHM)
+    secret_key = settings.JWT_SECRET_KEY
+    if not secret_key:
+        raise ValueError("JWT_SECRET_KEY is not configured")
+    encoded_jwt = jwt.encode(to_encode, secret_key, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
@@ -94,14 +97,17 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     against JWT_SECRET_KEY, the configured algorithm, and the sovereign issuer.
     Returns decoded claims dictionary or None if expired or tampered.
     """
+    secret_key = settings.JWT_SECRET_KEY
+    if not secret_key:
+        return None
     try:
         payload = jwt.decode(
             token,
-            settings.JWT_SECRET_KEY,
+            secret_key,
             algorithms=[settings.ALGORITHM],
             issuer="kelvrin-sovereign-gateway"
         )
-        return cast(Dict[str, Any], payload)
+        return payload
     except JWTError:
         return None
 

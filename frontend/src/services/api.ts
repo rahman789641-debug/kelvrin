@@ -64,9 +64,9 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
     });
     clearTimeout(timeoutId);
 
-    // 1. If server responds with 5xx or 404 (e.g. static hosting or air-gap),
+    // 1. If server responds with 5xx, 404, or 405 (e.g. static hosting or air-gap),
     // automatically fallback to the Sovereign Air-Gap Autonomous Simulation Engine!
-    if (response.status >= 500 || response.status === 404 || (response.status === 401 && endpoint.startsWith('/auth/me'))) {
+    if (response.status >= 500 || response.status === 404 || response.status === 405 || (response.status === 401 && endpoint.startsWith('/auth/me'))) {
       console.warn(`[KELVRIN_SOVEREIGN] Gateway status ${response.status} on ${endpoint}. Seamlessly delegating to Sovereign Air-Gap Enclave Engine.`);
       try {
         return await handleAirgapMockRequest<T>(endpoint, options);
@@ -1039,9 +1039,11 @@ export interface DeliverableItem {
   owner_id?: string | null;
   run_id?: string | null;
   status: 'DRAFT' | 'GENERATED' | 'APPROVED' | 'REJECTED' | string;
+  approval_status?: string | null;
+  generated_by?: string | null;
   approved_by?: string | null;
   approved_at?: string | null;
-  metadata_json: Record<string, any>;
+  metadata_json?: Record<string, any>;
   created_at: string;
   updated_at?: string | null;
 }

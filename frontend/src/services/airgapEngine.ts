@@ -40,9 +40,11 @@ import {
   AdminUserItem,
   RoleMetaItem,
   DemoScenariosResponse,
-  DemoGoldenFlowResponse
+  DemoGoldenFlowResponse,
+  ModelRoutingLog
 } from './api';
 import { syncDocumentToCloud, deleteDocumentFromCloud } from './cloudSync';
+import { getActiveCompany } from './accessControl';
 
 // ==========================================
 // 1. DEFAULT MOCK SEED DATA
@@ -281,6 +283,42 @@ const SEED_MODELS: SovereignModel[] = [
   }
 ];
 
+const SEED_ROUTING_LOGS: ModelRoutingLog[] = [
+  {
+    id: 'log_seed_01',
+    task_prompt: 'Analyze fiscal year tax discrepancies in ledger Q3',
+    detected_intent: 'AUDIT_ANALYSIS',
+    required_capabilities: ['reasoning', 'statutory_audit'],
+    selected_model_id: 'deepseek-r1-14b',
+    status: 'SUCCESS',
+    execution_time_ms: 184,
+    error_detail: null,
+    created_at: new Date(Date.now() - 3600000).toISOString()
+  },
+  {
+    id: 'log_seed_02',
+    task_prompt: 'Write Python script to parse sovereign enclave logs and filter anomalies',
+    detected_intent: 'CODE_GENERATION',
+    required_capabilities: ['python', 'ast_analysis'],
+    selected_model_id: 'qwen-2.5-coder-14b',
+    status: 'SUCCESS',
+    execution_time_ms: 142,
+    error_detail: null,
+    created_at: new Date(Date.now() - 7200000).toISOString()
+  },
+  {
+    id: 'log_seed_03',
+    task_prompt: 'Summarize internal security policy and incident response SLA',
+    detected_intent: 'SUMMARIZATION',
+    required_capabilities: ['chat', 'summarization'],
+    selected_model_id: 'llama-3.1-8b',
+    status: 'SUCCESS',
+    execution_time_ms: 95,
+    error_detail: null,
+    created_at: new Date(Date.now() - 14400000).toISOString()
+  }
+];
+
 const SEED_DOCUMENTS: SovereignDocument[] = [
   {
     id: 'doc_q3_01',
@@ -353,6 +391,45 @@ const SEED_CONVERSATION: Conversation = {
   ]
 };
 
+const SEED_DELIVERABLES: DeliverableItem[] = [
+  {
+    id: 'deliv_seed_01',
+    title: 'Q3 Sovereign Capital Adequacy & Reserve Audit Report',
+    filename: 'Q3_Capital_Adequacy_Report.docx',
+    file_type: 'DOCX',
+    file_size_bytes: 142500,
+    status: 'COMPLETED',
+    approval_status: 'APPROVED',
+    generated_by: 'Super Admin (System)',
+    sha256_hash: '9a7d3f82b1c4e6501a2f9b8c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e',
+    created_at: new Date(Date.now() - 86400000).toISOString()
+  },
+  {
+    id: 'deliv_seed_02',
+    title: 'Perimeter SCADA Air-Gap Compliance Matrix',
+    filename: 'SCADA_AirGap_Compliance_Matrix.xlsx',
+    file_type: 'XLSX',
+    file_size_bytes: 88400,
+    status: 'COMPLETED',
+    approval_status: 'APPROVED',
+    generated_by: 'AI Operator',
+    sha256_hash: '4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f',
+    created_at: new Date(Date.now() - 43200000).toISOString()
+  },
+  {
+    id: 'deliv_seed_03',
+    title: 'Sovereign Enclave Architecture & Governance Briefing',
+    filename: 'Enclave_Architecture_Briefing.pptx',
+    file_type: 'PPTX',
+    file_size_bytes: 215000,
+    status: 'COMPLETED',
+    approval_status: 'PENDING',
+    generated_by: 'Super Admin',
+    sha256_hash: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b',
+    created_at: new Date(Date.now() - 7200000).toISOString()
+  }
+];
+
 // ==========================================
 // 2. STATE STORAGE HELPERS
 // ==========================================
@@ -375,6 +452,10 @@ function setToStorage<T>(key: string, value: T): void {
 
 export function getActiveTenantCode(): string {
   try {
+    const comp = getActiveCompany();
+    if (comp && comp.code) {
+      return comp.code.trim().toUpperCase();
+    }
     const rawUser = localStorage.getItem('kelvrin_user');
     if (rawUser) {
       const u = JSON.parse(rawUser);
@@ -386,7 +467,7 @@ export function getActiveTenantCode(): string {
       if (c && (c.code || c.companyCode)) return (c.code || c.companyCode).trim().toUpperCase();
     }
   } catch {}
-  return 'DEFAULT';
+  return 'KELV-HQ';
 }
 
 
@@ -1586,11 +1667,61 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
     } as unknown as T;
   }
 
+  if (pathname === '/knowledge/chunks') {
+    const page = Number(url.searchParams.get('page')) || 1;
+    const pageSize = Number(url.searchParams.get('page_size')) || 10;
+    const q = (url.searchParams.get('q') || '').toLowerCase();
+    
+    const allChunks: DocumentChunkItem[] = [
+      { id: 'chk_1', document_id: 'doc_q3_01', chunk_index: 0, page_number: 1, content: 'Operational capital reserves must remain above Tier 1 statutory baseline of 10.50%. Current operational ratio confirmed at 16.40%.', token_count: 85, created_at: new Date(Date.now() - 86400000).toISOString() },
+      { id: 'chk_2', document_id: 'doc_q3_01', chunk_index: 1, page_number: 2, content: 'All stress tests must evaluate Foreign Exchange volatility and counterparty liquidity shock scenarios under adverse conditions.', token_count: 104, created_at: new Date(Date.now() - 86400000).toISOString() },
+      { id: 'chk_3', document_id: 'doc_scada_02', chunk_index: 0, page_number: 1, content: 'Enclave computational operations must strictly prohibit external internet socket connections. Physical diodes enforce one-way telemetry.', token_count: 92, created_at: new Date(Date.now() - 43200000).toISOString() },
+      { id: 'chk_4', document_id: 'doc_scada_02', chunk_index: 1, page_number: 2, content: 'Hardware SHA-256 seal verification must run every 300 seconds to validate memory integrity across all tensor cores.', token_count: 110, created_at: new Date(Date.now() - 43200000).toISOString() }
+    ];
+
+    const filtered = q ? allChunks.filter(c => c.content.toLowerCase().includes(q)) : allChunks;
+    return {
+      items: filtered.slice((page - 1) * pageSize, page * pageSize),
+      total_records: filtered.length,
+      page,
+      total_pages: Math.max(1, Math.ceil(filtered.length / pageSize))
+    } as unknown as T;
+  }
+
   // ----------------------------------------------------
   // E. MODELS
   // ----------------------------------------------------
-  if (pathname === '/models') {
-    return SEED_MODELS as unknown as T;
+  if (pathname === '/models/routing-logs') {
+    const limit = Number(url.searchParams.get('limit')) || 20;
+    const logs = getFromStorage<ModelRoutingLog[]>('kelvrin_airgap_routing_logs', SEED_ROUTING_LOGS);
+    return logs.slice(0, limit) as unknown as T;
+  }
+
+  if (pathname.includes('/models/') && pathname.endsWith('/toggle-status')) {
+    const parts = pathname.split('/');
+    const modelId = parts[2];
+    const models = getFromStorage<SovereignModel[]>('kelvrin_airgap_models', SEED_MODELS);
+    const model = models.find(m => m.id === modelId);
+    if (model) {
+      model.is_active = !model.is_active;
+      setToStorage('kelvrin_airgap_models', models);
+      return model as unknown as T;
+    }
+    return {
+      id: modelId,
+      name: modelId,
+      provider_type: 'vllm_local',
+      endpoint_url: 'http://127.0.0.1:8000/v1',
+      modality: 'text->text',
+      capabilities: ['TEXT'],
+      context_window: 8192,
+      vram_allocated_mb: 4096,
+      is_active: false,
+      health_status: 'HEALTHY',
+      last_health_check: new Date().toISOString(),
+      latency_ms: 20,
+      is_default: false
+    } as unknown as T;
   }
 
   if (pathname.includes('/models/') && pathname.endsWith('/health')) {
@@ -1603,6 +1734,31 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
       checked_at: new Date().toISOString()
     };
     return health as unknown as T;
+  }
+
+  if (pathname === '/models') {
+    const models = getFromStorage<SovereignModel[]>('kelvrin_airgap_models', SEED_MODELS);
+    if (method === 'POST') {
+      const newModel: SovereignModel = {
+        id: body?.id || `custom-model-${Date.now()}`,
+        name: body?.name || 'Custom Sovereign Model',
+        provider_type: body?.provider_type || 'mock',
+        endpoint_url: body?.endpoint_url || 'http://127.0.0.1:8001/v1',
+        modality: body?.modality || 'text->text',
+        capabilities: body?.capabilities || ['TEXT'],
+        context_window: Number(body?.context_window) || 8192,
+        vram_allocated_mb: Number(body?.vram_allocated_mb) || 4096,
+        is_active: body?.is_active !== false,
+        health_status: 'HEALTHY',
+        last_health_check: new Date().toISOString(),
+        latency_ms: 22,
+        is_default: !!body?.is_default
+      };
+      models.unshift(newModel);
+      setToStorage('kelvrin_airgap_models', models);
+      return newModel as unknown as T;
+    }
+    return models as unknown as T;
   }
 
   if (pathname === '/models/classify') {
@@ -1618,10 +1774,16 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
   }
 
   if (pathname === '/models/route') {
+    const chosenModel = body?.override_model_id || 'deepseek-r1-14b';
+    const chosenName = chosenModel.includes('qwen') 
+      ? 'Qwen-2.5-Coder 14B' 
+      : chosenModel.includes('llama') 
+      ? 'Llama-3.1 8B Instruct' 
+      : 'DeepSeek-R1 Distill 14B';
     const routeRes: RouteExecuteResult = {
       text: 'Execution succeeded locally via hardware tensor cores. Output verified.',
-      model_id: 'deepseek-r1-14b',
-      model_name: 'DeepSeek-R1 Distill 14B',
+      model_id: chosenModel,
+      model_name: chosenName,
       provider_type: 'vllm_local',
       detected_intent: 'REASONING',
       required_capabilities: ['reasoning'],
@@ -1631,6 +1793,25 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
       completion_tokens: 88,
       execution_time_ms: 180
     };
+
+    // Also persist into routing logs
+    try {
+      const logs = getFromStorage<ModelRoutingLog[]>('kelvrin_airgap_routing_logs', SEED_ROUTING_LOGS);
+      const newLog: ModelRoutingLog = {
+        id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        task_prompt: body?.prompt || 'Routing test execution',
+        detected_intent: 'REASONING',
+        required_capabilities: ['reasoning'],
+        selected_model_id: chosenModel,
+        status: 'SUCCESS',
+        execution_time_ms: 180,
+        error_detail: null,
+        created_at: new Date().toISOString()
+      };
+      logs.unshift(newLog);
+      setToStorage('kelvrin_airgap_routing_logs', logs);
+    } catch {}
+
     return routeRes as unknown as T;
   }
 
@@ -1668,9 +1849,60 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
   // ----------------------------------------------------
   // G. DELIVERABLES
   // ----------------------------------------------------
-  if (pathname === '/deliverables') {
+  if (pathname === '/deliverables/generate') {
     const delivKey = `kelvrin_airgap_deliverables_${getActiveTenantCode()}`;
-    const stored = getFromStorage<DeliverableItem[]>(delivKey, []);
+    const list = getFromStorage<DeliverableItem[]>(delivKey, SEED_DELIVERABLES);
+    const newDeliv: DeliverableItem = {
+      id: `deliv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      title: body?.title || 'Sovereign Compliance Deliverable',
+      filename: body?.filename || `Deliverable_${Date.now()}.${(body?.file_type || 'DOCX').toLowerCase()}`,
+      file_type: (body?.file_type || 'DOCX').toUpperCase(),
+      file_size_bytes: 125000,
+      status: 'COMPLETED',
+      approval_status: 'PENDING',
+      generated_by: 'Super Admin',
+      sha256_hash: Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+      created_at: new Date().toISOString()
+    };
+    list.unshift(newDeliv);
+    setToStorage(delivKey, list);
+    return newDeliv as unknown as T;
+  }
+
+  if (pathname.includes('/deliverables/') && pathname.endsWith('/approval')) {
+    const parts = pathname.split('/');
+    const delivId = parts[2];
+    const delivKey = `kelvrin_airgap_deliverables_${getActiveTenantCode()}`;
+    const list = getFromStorage<DeliverableItem[]>(delivKey, SEED_DELIVERABLES);
+    const item = list.find(d => d.id === delivId);
+    if (item) {
+      item.approval_status = body?.action === 'APPROVE' ? 'APPROVED' : body?.action === 'REJECT' ? 'REJECTED' : 'PENDING';
+      setToStorage(delivKey, list);
+      return item as unknown as T;
+    }
+    return { success: true } as unknown as T;
+  }
+
+  if (pathname.startsWith('/deliverables/') && method === 'DELETE') {
+    const delivId = pathname.split('/')[2];
+    const delivKey = `kelvrin_airgap_deliverables_${getActiveTenantCode()}`;
+    const list = getFromStorage<DeliverableItem[]>(delivKey, SEED_DELIVERABLES);
+    const remaining = list.filter(d => d.id !== delivId);
+    setToStorage(delivKey, remaining);
+    return { success: true } as unknown as T;
+  }
+
+  if (pathname.startsWith('/deliverables/') && method === 'GET' && pathname !== '/deliverables') {
+    const delivId = pathname.split('/')[2];
+    const delivKey = `kelvrin_airgap_deliverables_${getActiveTenantCode()}`;
+    const list = getFromStorage<DeliverableItem[]>(delivKey, SEED_DELIVERABLES);
+    const item = list.find(d => d.id === delivId) || list[0] || SEED_DELIVERABLES[0];
+    return item as unknown as T;
+  }
+
+  if (pathname === '/deliverables' || pathname === '/deliverables/') {
+    const delivKey = `kelvrin_airgap_deliverables_${getActiveTenantCode()}`;
+    const stored = getFromStorage<DeliverableItem[]>(delivKey, SEED_DELIVERABLES);
     return stored as unknown as T;
   }
 

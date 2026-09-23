@@ -95,6 +95,19 @@ export const DocumentsPage: React.FC = () => {
         if (!map.has(d.id)) map.set(d.id, d);
       });
 
+      // Defensive local storage check for currentCompanyCode
+      try {
+        const rawLocal = localStorage.getItem(`kelvrin_airgap_docs_${currentCompanyCode}`);
+        if (rawLocal) {
+          const parsed = JSON.parse(rawLocal);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(d => {
+              if (!map.has(d.id)) map.set(d.id, d);
+            });
+          }
+        }
+      } catch {}
+
       const merged = Array.from(map.values()).sort(
         (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
       );
@@ -242,10 +255,12 @@ export const DocumentsPage: React.FC = () => {
 
       const newDoc = await documentsApi.upload(formData);
       if (newDoc) {
+        // Immediate 0ms optimistic UI update - guaranteed to appear instantly!
+        setDocuments(prev => [newDoc, ...prev.filter(d => d.id !== newDoc.id)]);
         await syncDocumentToCloud(newDoc, currentCompanyCode).catch(() => {});
       }
 
-      success('Document Uploaded', `${newDoc.title} ingested and verified.`);
+      success('Document Uploaded', `${newDoc?.title || 'Document'} ingested and verified.`);
       setIsUploadOpen(false);
       setSelectedFile(null);
       setUploadTitle('');

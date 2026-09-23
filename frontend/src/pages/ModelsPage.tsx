@@ -87,8 +87,8 @@ export const ModelsPage: React.FC = () => {
         modelsApi.list(),
         modelsApi.getRoutingLogs(15)
       ]);
-      setModels(modelsData);
-      setRoutingLogs(logsData);
+      setModels(Array.isArray(modelsData) ? modelsData : []);
+      setRoutingLogs(Array.isArray(logsData) ? logsData : []);
     } catch (err: any) {
       error('Failed to load models data', err.message);
     } finally {
@@ -218,13 +218,13 @@ export const ModelsPage: React.FC = () => {
       success('Task Executed', `Routed to ${res.model_id} in ${res.execution_time_ms} ms`);
       // Refresh logs
       const updatedLogs = await modelsApi.getRoutingLogs(15);
-      setRoutingLogs(updatedLogs);
+      setRoutingLogs(Array.isArray(updatedLogs) ? updatedLogs : []);
     } catch (err: any) {
       setRouteError(err.message || 'Execution error');
       error('Routing Rejection', err.message);
       // Refresh logs to see failure record
       const updatedLogs = await modelsApi.getRoutingLogs(15);
-      setRoutingLogs(updatedLogs);
+      setRoutingLogs(Array.isArray(updatedLogs) ? updatedLogs : []);
     } finally {
       setIsExecutingRoute(false);
     }
@@ -309,7 +309,7 @@ export const ModelsPage: React.FC = () => {
         <div className="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between shadow-card">
           <div>
             <span className="text-xs text-slate-500 font-medium">Routing Decisions</span>
-            <div className="text-2xl font-bold text-slate-700 mt-0.5">{routingLogs.length}</div>
+            <div className="text-2xl font-bold text-slate-700 mt-0.5">{routingLogs?.length || 0}</div>
           </div>
           <div className="p-3 bg-slate-100 text-slate-700 rounded-lg">
             <Compass className="h-5 w-5" />
@@ -595,11 +595,11 @@ export const ModelsPage: React.FC = () => {
                 Auditable governance log of classified intents, capability requirements, and local model dispatch
               </CardDescription>
             </div>
-            <Badge variant="neutral" size="sm">{routingLogs.length} Records</Badge>
+            <Badge variant="neutral" size="sm">{routingLogs?.length || 0} Records</Badge>
           </div>
         </CardHeader>
         <CardContent>
-          {routingLogs.length === 0 ? (
+          {!routingLogs || routingLogs.length === 0 ? (
             <p className="text-xs text-slate-400 italic text-center py-6">No routing decisions recorded yet.</p>
           ) : (
             <div className="overflow-x-auto">
@@ -616,7 +616,7 @@ export const ModelsPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {routingLogs.map((log) => (
+                  {(Array.isArray(routingLogs) ? routingLogs : []).map((log) => (
                     <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-2.5 px-3 font-mono text-slate-400 text-[11px] whitespace-nowrap">
                         {new Date(log.created_at).toLocaleTimeString()}

@@ -66,8 +66,8 @@ export const AuditLogsPage: React.FC = () => {
         page,
         page_size: pageSize
       });
-      setLogs(res.items);
-      setTotal(res.total);
+      setLogs(Array.isArray(res?.items) ? res.items : []);
+      setTotal(res?.total || 0);
     } catch (err: any) {
       error('Audit Query Failed', err.message || 'Unable to retrieve audit records.');
     } finally {

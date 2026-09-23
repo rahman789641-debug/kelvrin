@@ -27,8 +27,11 @@ MANIFEST
 .env.*
 !.env.example
 venv/
+.venv
 .venv/
 backend/venv*
+backend/.venv
+backend/.venv/
 *.db
 *.db*
 *.sqlite

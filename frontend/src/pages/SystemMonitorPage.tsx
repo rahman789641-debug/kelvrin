@@ -40,7 +40,7 @@ export const SystemMonitorPage: React.FC = () => {
       ]);
       setHealth(healthData);
       setMetrics(metricsData);
-      setEvents(eventsData);
+      setEvents(Array.isArray(eventsData) ? eventsData : []);
       setLastPollTime(new Date().toLocaleTimeString());
     } catch (err: any) {
       error('Monitoring Probe Failed', err.message || 'Unable to connect to system metrics endpoint.');

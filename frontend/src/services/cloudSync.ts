@@ -697,19 +697,54 @@ export async function syncDocumentToCloud(
     return;
   }
 
-  const cleanDoc = {
-    ...docData,
+  // Ensure sanitized dataUrl (Firestore max doc size is 1MB)
+  let safeFileDataUrl = (docData as any).file_data_url || null;
+  if (safeFileDataUrl && safeFileDataUrl.length > 600000) {
+    safeFileDataUrl = null;
+  }
+
+  // Sanitize document to guarantee ZERO undefined fields (prevent Firestore throw)
+  const cleanDoc: Record<string, any> = {
     id: safeId,
-    companyCode: targetCode,
-    updated_at: new Date().toISOString()
+    title: docData.title || 'Untitled Document',
+    filename: docData.filename || 'document.pdf',
+    file_size_bytes: docData.file_size_bytes || 0,
+    mime_type: docData.mime_type || 'application/pdf',
+    sha256_hash: docData.sha256_hash || '',
+    classification: docData.classification || 'INTERNAL',
+    status: docData.status || 'COMPLETED',
+    ocr_applied: docData.ocr_applied ?? true,
+    total_pages: docData.total_pages || 1,
+    total_chunks: docData.total_chunks || 1,
+    uploaded_by: docData.uploaded_by || 'Enclave User',
+    owner_name: docData.owner_name || 'Enclave User',
+    owner_email: docData.owner_email || null,
+    content_preview: docData.content_preview || '',
+    asset_category: docData.asset_category || 'Operations',
+    created_at: docData.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    companyCode: targetCode
   };
 
-  // 1. Broadcast locally via Mesh (0ms latency for open tabs)
+  if (safeFileDataUrl) {
+    cleanDoc.file_data_url = safeFileDataUrl;
+  }
+
+  // 1. Immediately persist to local airgap storage for this tenant
+  try {
+    const localKey = `kelvrin_airgap_docs_${targetCode}`;
+    const raw = localStorage.getItem(localKey);
+    const list: SovereignDocument[] = raw ? JSON.parse(raw) : [];
+    const updated = [cleanDoc as SovereignDocument, ...list.filter(d => d.id !== safeId)];
+    localStorage.setItem(localKey, JSON.stringify(updated));
+  } catch {}
+
+  // 2. Broadcast locally via Mesh (0ms latency for open tabs of all roles)
   try {
     meshSync.broadcast('DOCUMENT_UPLOADED', cleanDoc);
   } catch {}
 
-  // 2. Sync to Cloud Firestore in company_documents collection
+  // 3. Sync to Cloud Firestore in company_documents collection
   try {
     const docRef = doc(db, 'company_documents', safeId);
     await withTimeout(

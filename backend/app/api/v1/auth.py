@@ -93,7 +93,7 @@ async def google_login(
             await db.refresh(user)
 
     # 3. Security Gate: Check if user account is suspended
-    if str(user.status).upper() not in ["ACTIVE"]:
+    if user.status.upper() not in ["ACTIVE"]:
         await record_audit_log(
             db,
             action="LOGIN_DENIED",
@@ -200,7 +200,7 @@ async def local_login(
             detail="Invalid credentials for Sovereign Enclave"
         )
     
-    if str(user.status).upper() not in ["ACTIVE"]:
+    if user.status.upper() not in ["ACTIVE"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account suspended by Sovereign Security Policy"
