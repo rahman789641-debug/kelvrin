@@ -47,6 +47,7 @@ import {
 } from './api';
 import { syncDocumentToCloud, deleteDocumentFromCloud } from './cloudSync';
 import { getActiveCompany } from './accessControl';
+import { deleteDocumentBlob } from '../utils/documentStorage';
 
 // ==========================================
 // 1. DEFAULT MOCK SEED DATA
@@ -1623,6 +1624,7 @@ Integrity: Cryptographically sealed. Ready for sovereign analysis.`;
     if (method === 'DELETE') {
       const remaining = docs.filter(d => d.id !== docId);
       setToStorage(docsKey, remaining);
+      deleteDocumentBlob(docId).catch(() => {});
       deleteDocumentFromCloud(docId, tenant).catch((err) => {
         console.warn('[AirgapEngine] Cloud document delete notice:', err);
       });

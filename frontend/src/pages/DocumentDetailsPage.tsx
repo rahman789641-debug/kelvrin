@@ -12,11 +12,18 @@ import {
   DocumentChunkItem 
 } from '../services/api';
 import { 
+  deleteDocumentFromCloud 
+} from '../services/cloudSync';
+import { meshSync } from '../services/meshSync';
+import { useAuth } from '../context/AuthContext';
+import { getActiveCompany } from '../services/accessControl';
+import { 
   saveDocumentBlob, 
   getDocumentObjectUrl, 
   getDocumentDataUrl, 
   saveDocumentDataUrl, 
-  generatePdfPreviewUrl 
+  generatePdfPreviewUrl,
+  deleteDocumentBlob
 } from '../utils/documentStorage';
 import { 
   FileText, 
@@ -56,6 +63,7 @@ export const DocumentDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { success, error, info } = useToast();
+  const { user } = useAuth();
 
   const [document, setDocument] = useState<SovereignDocumentDetail | null>(null);
   const [docUrl, setDocUrl] = useState<string | null>(null);
@@ -64,6 +72,8 @@ export const DocumentDetailsPage: React.FC = () => {
   const [deleting, setDeleting] = useState<boolean>(false);
   const [downloading, setDownloading] = useState<boolean>(false);
   const [retrying, setRetrying] = useState<boolean>(false);
+
+  const currentCompanyCode = document?.companyCode || user?.companyCode || getActiveCompany().code || 'KELV-HQ';
 
   // Tabs: 'preview' | 'logs' | 'chunks'
   const [activeTab, setActiveTab] = useState<'preview' | 'logs' | 'chunks'>('preview');
@@ -75,6 +85,16 @@ export const DocumentDetailsPage: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     loadDocument(id);
+
+    // Subscribe to cross-tab mesh deletion so all roles sync instantly
+    const unsub = meshSync.subscribe((msg) => {
+      if (msg.type === 'DOCUMENT_DELETED' && msg.payload?.id === id) {
+        info('Document Purged', 'This document was deleted across all company roles.');
+        navigate('/documents');
+      }
+    });
+
+    return () => unsub();
   }, [id]);
 
   const loadDocument = async (docId: string) => {
@@ -168,13 +188,15 @@ export const DocumentDetailsPage: React.FC = () => {
 
   const handleDelete = async () => {
     if (!document) return;
-    if (!window.confirm(`Are you sure you want to permanently purge "${document.title}" from sovereign disk?`)) {
+    if (!window.confirm(`Are you sure you want to permanently purge "${document.title}" across all roles in this company?`)) {
       return;
     }
     try {
       setDeleting(true);
-      await documentsApi.delete(document.id);
-      success('Document Purged', 'Database record and sovereign storage file purged.');
+      await deleteDocumentBlob(document.id).catch(() => {});
+      await deleteDocumentFromCloud(document.id, currentCompanyCode).catch(() => {});
+      await documentsApi.delete(document.id).catch(() => {});
+      success('Document Purged', `"${document.title}" was purged across all company roles.`);
       navigate('/documents');
     } catch (err: any) {
       error('Purge Failed', err.message || 'Permission denied or file locked.');

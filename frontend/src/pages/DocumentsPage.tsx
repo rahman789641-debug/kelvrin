@@ -26,8 +26,10 @@ import {
   getDocumentObjectUrl, 
   getDocumentDataUrl, 
   saveDocumentDataUrl, 
-  generatePdfPreviewUrl 
+  generatePdfPreviewUrl,
+  deleteDocumentBlob
 } from '../utils/documentStorage';
+import { meshSync } from '../services/meshSync';
 import { 
   FileText, 
   UploadCloud, 
@@ -88,42 +90,38 @@ export const DocumentsPage: React.FC = () => {
   const loadDocuments = async () => {
     try {
       setLoading(true);
-      const res = await documentsApi.list({
-        q: searchTerm || undefined,
-        classification: classificationFilter !== 'ALL' ? classificationFilter : undefined,
-        status: statusFilter !== 'ALL' ? statusFilter : undefined,
-        file_type: fileTypeFilter !== 'ALL' ? fileTypeFilter : undefined,
-        page: 1,
-        page_size: 100
-      });
-      const items: SovereignDocument[] = Array.isArray(res) ? res : (res?.items || []);
-
-      // Fetch cloud documents for this company and merge with strict tenant isolation
+      // Fetch cloud documents for this company (strict multi-tenant isolation)
       const cloudDocs = await fetchDocumentsFromCloud(currentCompanyCode).catch(() => []);
-
-      const map = new Map<string, SovereignDocument>();
-      cloudDocs.forEach(d => map.set(d.id, d));
-      items.forEach(d => {
-        if (!map.has(d.id)) map.set(d.id, d);
-      });
-
-      // Defensive local storage check for currentCompanyCode
-      try {
+      if (cloudDocs && cloudDocs.length > 0) {
+        setDocuments(cloudDocs);
+        try {
+          localStorage.setItem(`kelvrin_airgap_docs_${currentCompanyCode}`, JSON.stringify(cloudDocs));
+        } catch {}
+      } else {
+        // Fallback to local storage if offline
         const rawLocal = localStorage.getItem(`kelvrin_airgap_docs_${currentCompanyCode}`);
         if (rawLocal) {
-          const parsed = JSON.parse(rawLocal);
-          if (Array.isArray(parsed)) {
-            parsed.forEach(d => {
-              if (!map.has(d.id)) map.set(d.id, d);
-            });
-          }
+          try {
+            const parsed = JSON.parse(rawLocal);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setDocuments(parsed);
+              return;
+            }
+          } catch {}
         }
-      } catch {}
 
-      const merged = Array.from(map.values()).sort(
-        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-      );
-      setDocuments(merged);
+        // Fallback to API list
+        const res = await documentsApi.list({
+          q: searchTerm || undefined,
+          classification: classificationFilter !== 'ALL' ? classificationFilter : undefined,
+          status: statusFilter !== 'ALL' ? statusFilter : undefined,
+          file_type: fileTypeFilter !== 'ALL' ? fileTypeFilter : undefined,
+          page: 1,
+          page_size: 100
+        });
+        const items: SovereignDocument[] = Array.isArray(res) ? res : (res?.items || []);
+        setDocuments(items);
+      }
     } catch (err: any) {
       error('Failed to load documents', err.message || 'Network or authorization issue.');
     } finally {
@@ -135,23 +133,34 @@ export const DocumentsPage: React.FC = () => {
   useEffect(() => {
     loadDocuments();
 
-    // Live Real-Time Multi-Tenant Cross-Role Subscription
-    // Documents uploaded by ANY role in this company appear immediately!
-    const unsub = listenToDocumentsFromCloud(currentCompanyCode, (cloudDocs) => {
-      setDocuments(prev => {
-        const map = new Map<string, SovereignDocument>();
-        cloudDocs.forEach(d => map.set(d.id, d));
-        prev.forEach(d => {
-          if (!map.has(d.id)) map.set(d.id, d);
-        });
-        return Array.from(map.values()).sort(
-          (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-        );
-      });
+    // 1. Live Real-Time Multi-Tenant Cross-Role Subscription
+    // Documents uploaded or deleted by ANY role in this company update immediately!
+    const unsubCloud = listenToDocumentsFromCloud(currentCompanyCode, (cloudDocs) => {
+      setDocuments(cloudDocs);
+      setActiveDrawerDoc(prev => (prev && !cloudDocs.some(d => d.id === prev.id) ? null : prev));
+    });
+
+    // 2. Real-time Cross-Tab Mesh Synchronization (0ms instant sync across browser tabs/roles)
+    const unsubMesh = meshSync.subscribe((msg) => {
+      if (msg.type === 'DOCUMENT_DELETED' && msg.payload?.id) {
+        const deletedId = msg.payload.id;
+        const targetCode = (msg.payload.companyCode || '').trim().toUpperCase();
+        if (!targetCode || targetCode === currentCompanyCode) {
+          setDocuments(prev => prev.filter(d => d.id !== deletedId));
+          setActiveDrawerDoc(prev => (prev?.id === deletedId ? null : prev));
+        }
+      } else if (msg.type === 'DOCUMENT_UPLOADED' && msg.payload?.id) {
+        const newDoc = msg.payload;
+        const targetCode = (newDoc.companyCode || '').trim().toUpperCase();
+        if (!targetCode || targetCode === currentCompanyCode) {
+          setDocuments(prev => [newDoc, ...prev.filter(d => d.id !== newDoc.id)]);
+        }
+      }
     });
 
     return () => {
-      unsub();
+      unsubCloud();
+      unsubMesh();
     };
   }, [currentCompanyCode, classificationFilter, statusFilter, fileTypeFilter]);
 
@@ -218,17 +227,26 @@ export const DocumentsPage: React.FC = () => {
 
   const handleDelete = async (doc: SovereignDocument, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (!window.confirm(`Permanently delete "${doc.title}" from sovereign vault?`)) {
+    if (!window.confirm(`Permanently delete "${doc.title}" across all roles in this company?`)) {
       return;
     }
     try {
-      await documentsApi.delete(doc.id).catch(() => {});
-      await deleteDocumentFromCloud(doc.id, currentCompanyCode).catch(() => {});
-      success('Document Purged', `${doc.title} removed from database and disk.`);
+      // 1. Immediate 0ms local optimistic UI update
       setDocuments(prev => prev.filter(d => d.id !== doc.id));
       if (activeDrawerDoc?.id === doc.id) {
         setActiveDrawerDoc(null);
       }
+
+      // 2. Purge local binary blob & object URLs
+      await deleteDocumentBlob(doc.id).catch(() => {});
+
+      // 3. Broadcast mesh & delete from Cloud Firestore (notifies all roles and tabs!)
+      await deleteDocumentFromCloud(doc.id, currentCompanyCode).catch(() => {});
+
+      // 4. Delete from backend airgap API
+      await documentsApi.delete(doc.id).catch(() => {});
+
+      success('Document Purged', `"${doc.title}" was deleted across all company roles.`);
     } catch (err: any) {
       error('Delete Failed', err.message || 'Clearance documents.delete required.');
     }
@@ -788,6 +806,16 @@ export const DocumentsPage: React.FC = () => {
                 >
                   <Download className="h-3.5 w-3.5 mr-1" />
                   Download
+                </Button>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={() => handleDelete(activeDrawerDoc)}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                  title="Permanently purge document across all company roles"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  Delete
                 </Button>
               </div>
             </div>

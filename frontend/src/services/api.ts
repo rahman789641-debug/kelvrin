@@ -448,21 +448,9 @@ export const documentsApi = {
   },
 
   async delete(docId: string): Promise<void> {
-    const token = getStoredToken();
-    const headers = new Headers();
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-    const response = await fetch(`${API_BASE}/documents/${docId}`, {
-      method: 'DELETE',
-      headers
+    await apiRequest<{ success: boolean; message: string }>(`/documents/${docId}`, {
+      method: 'DELETE'
     });
-    if (!response.ok && response.status !== 204) {
-      let errorDetail = `Delete failed with status ${response.status}`;
-      try {
-        const errorJson = await response.json();
-        errorDetail = errorJson.detail || errorDetail;
-      } catch {}
-      throw new Error(errorDetail);
-    }
   },
 
   async retry(docId: string): Promise<{ success: boolean; document_id: string; status: string; message: string }> {

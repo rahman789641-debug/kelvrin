@@ -100,6 +100,34 @@ class MeshSyncService {
           };
           localStorage.setItem('kelvrin_access_requests', JSON.stringify(list));
         }
+      } else if (msg.type === 'DOCUMENT_DELETED' && msg.payload?.id) {
+        const docId = msg.payload.id;
+        const code = (msg.payload.companyCode || '').trim().toUpperCase();
+        if (code) {
+          const key = `kelvrin_airgap_docs_${code}`;
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            try {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                localStorage.setItem(key, JSON.stringify(list.filter((d: any) => d.id !== docId)));
+              }
+            } catch {}
+          }
+        }
+      } else if (msg.type === 'DOCUMENT_UPLOADED' && msg.payload?.id) {
+        const code = (msg.payload.companyCode || '').trim().toUpperCase();
+        if (code) {
+          const key = `kelvrin_airgap_docs_${code}`;
+          const raw = localStorage.getItem(key);
+          const list = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(list)) {
+            const updated = [msg.payload, ...list.filter((d: any) => d.id !== msg.payload.id)];
+            try {
+              localStorage.setItem(key, JSON.stringify(updated));
+            } catch {}
+          }
+        }
       } else if (msg.type === 'REQUEST_COMPANIES_SYNC') {
         const raw = localStorage.getItem('kelvrin_companies');
         if (raw) {

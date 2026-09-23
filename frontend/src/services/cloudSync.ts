@@ -15,6 +15,7 @@ import { db } from './firebase';
 import { AccessRequest, TeamMember } from './accessControl';
 import { companyApi, SovereignDocument } from './api';
 import { meshSync } from './meshSync';
+import { deleteDocumentBlob } from '../utils/documentStorage';
 
 /**
  * Cloud Sync Service:
@@ -816,29 +817,42 @@ export function listenToDocumentsFromCloud(
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const map = new Map<string, SovereignDocument>();
-
-        // Load existing from local storage
-        try {
-          const raw = localStorage.getItem(`kelvrin_airgap_docs_${targetCode}`);
-          if (raw) {
-            const local: SovereignDocument[] = JSON.parse(raw);
-            local.forEach(d => map.set(d.id, d));
-          }
-        } catch {}
-
-        snapshot.docs.forEach(d => {
-          const data = d.data() as SovereignDocument;
-          if (data && data.id) {
-            map.set(data.id, data);
+        // Collect removed document IDs to permanently eradicate them
+        const removedIds = new Set<string>();
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'removed') {
+            removedIds.add(change.doc.id);
           }
         });
 
-        const sorted = Array.from(map.values()).sort(
+        // Collect current cloud documents
+        const cloudDocs: SovereignDocument[] = [];
+        snapshot.docs.forEach(d => {
+          const data = d.data() as SovereignDocument;
+          if (data && data.id && !removedIds.has(data.id)) {
+            cloudDocs.push(data);
+          }
+        });
+
+        // Clean local storage by removing any removedIds
+        if (removedIds.size > 0) {
+          try {
+            const raw = localStorage.getItem(`kelvrin_airgap_docs_${targetCode}`);
+            if (raw) {
+              const local: SovereignDocument[] = JSON.parse(raw);
+              if (Array.isArray(local)) {
+                const cleaned = local.filter(d => !removedIds.has(d.id));
+                localStorage.setItem(`kelvrin_airgap_docs_${targetCode}`, JSON.stringify(cleaned));
+              }
+            }
+          } catch {}
+        }
+
+        const sorted = cloudDocs.sort(
           (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
         );
 
-        // Update local cache
+        // Update local cache to match exact active documents
         try {
           localStorage.setItem(`kelvrin_airgap_docs_${targetCode}`, JSON.stringify(sorted));
         } catch {}
@@ -863,12 +877,12 @@ export async function deleteDocumentFromCloud(
 ): Promise<void> {
   const targetCode = (companyCode || '').trim().toUpperCase();
 
-  // 1. Broadcast via Mesh
+  // 1. Broadcast via Mesh (0ms instant cross-tab / cross-role sync)
   try {
     meshSync.broadcast('DOCUMENT_DELETED', { id: docId, companyCode: targetCode });
   } catch {}
 
-  // 2. Remove from local storage
+  // 2. Remove from local storage immediately
   try {
     const key = `kelvrin_airgap_docs_${targetCode}`;
     const raw = localStorage.getItem(key);
@@ -879,7 +893,12 @@ export async function deleteDocumentFromCloud(
     }
   } catch {}
 
-  // 3. Delete from Cloud Firestore
+  // 3. Purge cached blob and object URLs
+  try {
+    await deleteDocumentBlob(docId);
+  } catch {}
+
+  // 4. Delete from Cloud Firestore
   try {
     const docRef = doc(db, 'company_documents', docId);
     await withTimeout(deleteDoc(docRef), undefined);

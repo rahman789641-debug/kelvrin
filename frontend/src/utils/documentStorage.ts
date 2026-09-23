@@ -166,3 +166,44 @@ export function generatePdfPreviewUrl(doc: SovereignDocument): string {
   objectUrlMap.set(cacheKey, url);
   return url;
 }
+
+/**
+ * Delete blob from IndexedDB, revoke cached object URLs, and clear data URLs
+ */
+export async function deleteDocumentBlob(docId: string): Promise<void> {
+  if (!docId) return;
+
+  // Revoke cached object URL if exists
+  if (objectUrlMap.has(docId)) {
+    try {
+      URL.revokeObjectURL(objectUrlMap.get(docId)!);
+    } catch {}
+    objectUrlMap.delete(docId);
+  }
+  const previewKey = `pdf_preview_${docId}`;
+  if (objectUrlMap.has(previewKey)) {
+    try {
+      URL.revokeObjectURL(objectUrlMap.get(previewKey)!);
+    } catch {}
+    objectUrlMap.delete(previewKey);
+  }
+
+  memoryBlobMap.delete(docId);
+
+  try {
+    localStorage.removeItem(`kelvrin_doc_data_${docId}`);
+  } catch {}
+
+  try {
+    const db = await getIndexedDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([STORE_NAME], 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.delete(docId);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch (err) {
+    console.warn('[DocVault] IndexedDB delete fallback:', err);
+  }
+}
