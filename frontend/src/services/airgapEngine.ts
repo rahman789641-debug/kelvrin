@@ -41,7 +41,9 @@ import {
   RoleMetaItem,
   DemoScenariosResponse,
   DemoGoldenFlowResponse,
-  ModelRoutingLog
+  ModelRoutingLog,
+  SecurityDashboardData,
+  AirGapAuditResult
 } from './api';
 import { syncDocumentToCloud, deleteDocumentFromCloud } from './cloudSync';
 import { getActiveCompany } from './accessControl';
@@ -2273,30 +2275,76 @@ export async function handleAirgapMockRequest<T>(endpoint: string, options: Requ
   }
 
   if (pathname === '/security/dashboard') {
-    return {
-      egress_attempts_blocked: 0,
-      external_network_disabled: true,
-      dns_requests_blocked: 0,
-      hardware_enclave_status: 'SECURE_AIR_GAP',
-      firewall_rules_active: 48,
-      last_audit_timestamp: new Date().toISOString(),
-      active_security_profiles: 6,
-      enclave_integrity: 'VERIFIED_100_PERCENT',
-      isolation_mode: 'ON_PREMISE_HARDENED',
-      egress_bytes_total: 0
-    } as unknown as T;
+    const secData: SecurityDashboardData = {
+      timestamp: new Date().toISOString(),
+      egress_metrics: {
+        confidential_data_egress_bytes: 0,
+        external_ai_calls: 0,
+        external_api_calls: 0,
+        blocked_connections: 12,
+        local_ai_requests: 184,
+        auth_events: 28,
+        connector_calls: 0
+      },
+      boundary_status: {
+        air_gap_verified: true,
+        zero_cloud_leakage: true,
+        sandbox_network_isolated: true,
+        dns_leak_protection: true
+      },
+      auth_architecture: {
+        auth_mode: 'local_enclave',
+        is_air_gapped: true,
+        identity_provider: 'Sovereign Multi-Tenant Gateway',
+        dependency_notice: 'All AI inference and confidential vector indexing execute strictly on local GPU hardware with default-deny network egress.'
+      },
+      security_events: [
+        {
+          id: 'sec_01',
+          timestamp: new Date(Date.now() - 180000).toISOString(),
+          action: 'EGRESS_BLOCKED',
+          actor: 'SANDBOX_CGROUP',
+          resource_type: 'RAW_SOCKET',
+          resource_id: 'tcp://external:443',
+          status: 'BLOCKED',
+          details: { message: 'Outbound TCP socket attempt blocked by hardware firewall rule #48' }
+        },
+        {
+          id: 'sec_02',
+          timestamp: new Date(Date.now() - 720000).toISOString(),
+          action: 'USER_LOGIN',
+          actor: 'Super Admin',
+          resource_type: 'SESSION',
+          resource_id: 'sess_live',
+          status: 'SUCCESS',
+          details: { message: 'Cryptographic challenge passed. Super Admin session established.' }
+        },
+        {
+          id: 'sec_03',
+          timestamp: new Date(Date.now() - 1440000).toISOString(),
+          action: 'PERIMETER_PROBE',
+          actor: 'SECURITY_DAEMON',
+          resource_type: 'INTEGRITY_CHECK',
+          resource_id: 'sha256_memory',
+          status: 'SUCCESS',
+          details: { message: 'Hardware SHA-256 seal verified across all model weights.' }
+        }
+      ]
+    };
+    return secData as unknown as T;
   }
 
   if (pathname === '/security/airgap-test') {
-    return {
+    const auditRes: AirGapAuditResult = {
+      status: 'PASS',
       timestamp: new Date().toISOString(),
-      airgap_confirmed: true,
-      egress_bytes: 0,
-      dns_queries: 0,
-      icmp_packets: 0,
-      status: 'PASSED',
-      audit_signature: `SOV-AIRGAP-PASS-${Date.now()}`
-    } as unknown as T;
+      air_gap_integrity: '100% Isolated',
+      external_egress_bytes: 0,
+      external_ai_calls: 0,
+      audit_id: `AUDIT-SEAL-${Date.now().toString(36).toUpperCase()}`,
+      message: 'Zero outbound telemetry detected. Cloud AI endpoints, external DNS, and ungrounded sockets are completely blocked.'
+    };
+    return auditRes as unknown as T;
   }
 
   // ----------------------------------------------------

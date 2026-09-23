@@ -115,11 +115,11 @@ export const SecurityPage: React.FC = () => {
                 Sovereign Air-Gap Architecture Guarantee
               </strong>
               <Badge variant="neutral" size="sm">
-                AUTH_MODE: {dashboard?.auth_architecture.auth_mode.toUpperCase() || 'LOCAL'}
+                AUTH_MODE: {dashboard?.auth_architecture?.auth_mode ? dashboard.auth_architecture.auth_mode.toUpperCase() : 'LOCAL'}
               </Badge>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
-              {dashboard?.auth_architecture.dependency_notice ||
+              {dashboard?.auth_architecture?.dependency_notice ||
                 'AI and confidential data processing remain strictly on-premises. External authentication dependencies (Firebase) may require outbound network access if enabled.'}
             </p>
             <div className="text-[11px] text-slate-400 pt-1 flex items-center gap-4">
@@ -181,7 +181,7 @@ export const SecurityPage: React.FC = () => {
             <span className="text-[11px] font-bold text-emerald-900 uppercase">Document Egress</span>
           </div>
           <h3 className="text-xl font-bold text-emerald-800 mt-2">
-            {dashboard ? `${dashboard.egress_metrics.confidential_data_egress_bytes} Bytes` : '0 Bytes'}
+            {`${dashboard?.egress_metrics?.confidential_data_egress_bytes ?? 0} Bytes`}
           </h3>
           <p className="text-[10px] text-slate-500 mt-1">Zero confidential files leaked</p>
         </Card>
@@ -193,7 +193,7 @@ export const SecurityPage: React.FC = () => {
             <span className="text-[11px] font-bold text-slate-700 uppercase">External AI Calls</span>
           </div>
           <h3 className="text-xl font-bold text-emerald-800 mt-2">
-            {dashboard ? dashboard.egress_metrics.external_ai_calls : 0} Calls
+            {dashboard?.egress_metrics?.external_ai_calls ?? 0} Calls
           </h3>
           <p className="text-[10px] text-slate-500 mt-1">Cloud LLMs strictly zero</p>
         </Card>
@@ -205,7 +205,7 @@ export const SecurityPage: React.FC = () => {
             <span className="text-[11px] font-bold text-slate-500 uppercase">Blocked Sockets</span>
           </div>
           <h3 className="text-xl font-bold text-slate-900 mt-2">
-            {dashboard ? dashboard.egress_metrics.blocked_connections : 0} Dropped
+            {dashboard?.egress_metrics?.blocked_connections ?? 0} Dropped
           </h3>
           <p className="text-[10px] text-slate-500 mt-1">Firewall egress filter</p>
         </Card>
@@ -217,7 +217,7 @@ export const SecurityPage: React.FC = () => {
             <span className="text-[11px] font-bold text-slate-500 uppercase">Local AI Queries</span>
           </div>
           <h3 className="text-xl font-bold text-slate-900 mt-2">
-            {dashboard ? dashboard.egress_metrics.local_ai_requests : 0}
+            {dashboard?.egress_metrics?.local_ai_requests ?? 0}
           </h3>
           <p className="text-[10px] text-slate-500 mt-1">Served on local GPUs/CPUs</p>
         </Card>

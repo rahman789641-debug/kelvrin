@@ -325,7 +325,7 @@ export const ModelsPage: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {models.map((model) => {
+          {(Array.isArray(models) ? models : []).map((model) => {
             const isProbing = probingModelId === model.id;
             return (
               <Card key={model.id} className="space-y-4">
@@ -544,7 +544,7 @@ export const ModelsPage: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-semibold text-slate-500">Required:</span>
-                  {classificationResult.required_capabilities.map((c) => (
+                  {(classificationResult.required_capabilities || []).map((c) => (
                     <span
                       key={c}
                       className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-[10px] font-bold rounded font-mono"
